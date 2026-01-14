@@ -1,0 +1,32 @@
+data:
+  exp: 'MPI-annual'
+  model_name: 'MPI-ESM1-2-LR'
+  raw_path: '/scratch/globc/garcia/scenarIA/rawdata/MPI-ESM1-2-LR/r1-r50i1p1f1/'
+  dataset_path: '/scratch/globc/garcia/scenarIA/datasets/MPI-ESM1-2-LR/annual/'
+  forcings: ['CO2', 'SO2', 'CH4', 'BC']
+  variables: ['tas', 'pr']
+  seed_subsets: 42 # to choose subsets of members
+  nb_member_per_subsets: 50 # one-to-many approach. If n = 1, individual approach.
+  nb_subsets: 20 # number of subsets to create (only if one-to-many)
+  piControl_diff: True # whether the output is a difference with piControl or not
+  predict_only_last_timestep: True # need to concatenate with historical to get the whole seq
+  timescale: 'annual'
+  seq_length: 10
+
+
+train: # for training
+  val_size: 0.2 # proportion of the data used for validationval_size: 0.2 # proportion of the data used for validation
+  seed: 42 # for reproducibility of shuffling and weight initialization
+  arch: 'cnn-lstm'
+  learning_rate: 0.001
+  max_epochs: 30
+  batch_size: 16
+  runs_dir: '/scratch/globc/garcia/scenarIA/runs/MPI-annual/50_member_mean' #(à changer) ne pas mettre test name
+  inputs: ['CO2', 'SO2', 'CH4', 'BC']
+  outputs: ['tas', 'pr']
+  test_name: 'test1'
+  simus_train: ['historical', 'ssp126', 'ssp370', 'ssp585']
+  simus_test: ['ssp245']
+  img_size: [96, 192]
+  scheduler_step_size: 50
+  scheduler_gamma: 0.1
