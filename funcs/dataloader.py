@@ -1,3 +1,4 @@
+from curses import window
 from logging import config
 from pickletools import int4
 from torch.utils.data import Dataset, DataLoader
@@ -35,14 +36,15 @@ class scenarIA(Dataset):
         else:
             self.simus = config['train']['simus_test']
 
-        x, y = self.load_xr_data(Path(config['data']['dataset_path']),
+        inputs, outputs = self.load_xr_data(Path(config['data']['dataset_path']),
                                  inputs_list=config['train']['inputs'],
                                  outputs_list=config['train']['outputs'],
                                  seed_subsets=config['data']['seed_subsets'],
                                  nb_member_per_subsets=config['data']['nb_member_per_subsets'],
                                  nb_subsets=config['data']['nb_subsets'])
-        print('x', x)
-        print('y', y)
+        print('inputs', inputs)
+        print('outputs', outputs)
+
         # annual mean
         # concatenate with historical is necessary (after mean of members)
         # pi control
@@ -63,33 +65,36 @@ class scenarIA(Dataset):
                      outputs_list,
                      seed_subsets: int,
                      nb_member_per_subsets: int,
-                     nb_subsets: int
+                     nb_subsets: int,
                      ) -> tuple[dict, dict]:
         """
-        Loads input (x) and output (y) data from NetCDF files for each simulation
+        Loads input (inputs) and output (outputs) data from NetCDF files for each simulation
         specified in self.simus.
-        x = {'simu_name': ds}
-        y = {'simu_name':[ds1, ds2,...]} # list of forced responses from random subsets. 
+        inputs = {'simu_name': ds}
+        outputs = {'simu_name':[ds1, ds2,...]} # list of forced responses from random subsets. 
         If one-to-one, list of one element.
         Returns:
             tuple[dict, dict]: Two dictionaries containing input and output data
             for each simulation.
         """
-        x, y = {}, {}
+
+        inputs, outputs = {}, {}
         for simu in self.simus:
             print(simu)
-            #### x
-            x[simu] = xr.open_dataset(dataset_path / f'inputs_{simu}.nc')[inputs_list]
-            # add historical if needed
-
-            #### y (supposing all exp have the same number of member)
-            y_subsets = []
+            
+            inputs[simu] = xr.open_dataset(dataset_path / f'inputs_{simu}.nc')[inputs_list]
+            
             ds_ensemble = xr.open_dataset(dataset_path / f'outputs_{simu}.nc')[outputs_list]
-            # individual members ??? nb_subsets = nb max membre et nb_member_per_subsets = 1
+
+            # case with no subsets. Ex : all members used or not enough members
             if ds_ensemble.member.size == nb_member_per_subsets or ds_ensemble.member.size < nb_member_per_subsets:
                 print('all members used or not enough members')
-                y[simu] = [ds_ensemble.mean('member')]
-            else: 
+                ds_ensemble_mean = ds_ensemble.mean('member')
+                outputs[simu] = [ds_ensemble_mean]
+
+            # case with subsets. Ex : not all members used or one-to-many approach
+            else:
+                outputs_subsets = []
                 if nb_subsets > 1: # one-to-many approach
                     print('one-to-many approach')
                     for i in range(nb_subsets):
@@ -97,19 +102,19 @@ class scenarIA(Dataset):
                                                                 seed_subsets + i, 
                                                                 nb_member_per_subsets,
                                                                 mean=True)
-                        y_subsets.append(ds_subset)
-                    y[simu] = y_subsets
+                        outputs_subsets.append(ds_subset)
+                    outputs[simu] = outputs_subsets
                 else: # one-to-one approach
                     print('one-to-one approach')
                     ds_ensemble_mean = self.get_random_member_subset(ds_ensemble, 
                                                                 seed_subsets, 
                                                                 nb_member_per_subsets,
                                                                 mean=True)
-                    y[simu] = [ds_ensemble_mean]
+                    outputs[simu] = [ds_ensemble_mean]
 
-            print('yshape', len(y[simu]))
+            print(f'nombre de sous ensemble pour {simu}', len(outputs[simu]))
             
-        return x, y
+        return inputs, outputs
     
     
     def get_random_member_subset(self, 
@@ -118,13 +123,33 @@ class scenarIA(Dataset):
                                  nb_member_per_subsets: int,
                                  mean: bool = True) -> xr.Dataset:
         np.random.seed(seed)
-        members = np.random.choice(ds.member.values,
-                                   size=nb_member_per_subsets,
-                                   replace=False)
+        members = np.random.choice(ds.member.values, size=nb_member_per_subsets, replace=True)
         if mean:
             return ds.sel(member=members).mean('member')
         return ds.sel(member=members)
 
+    def build_samples_from_xr(self, 
+                              inputs_dict, 
+                              outputs_dict,
+                              seq_length: int,
+                              predict_only_last_timestep: bool):
+        inputs_list = []
+        outputs_list = []
+        for simu in self.simus:
+            inputs = inputs_dict[simu].to_array().transpose('time', 'lat', 'lon', 'variable').to_numpy()
+            for ds_output in outputs_dict[simu]:
+                outputs = ds_output.to_array().transpose('time', 'lat', 'lon', 'variable').to_numpy()
+                if predict_only_last_timestep:
+                    for i in range(inputs.shape[0] - seq_length + 1):
+                        inputs_list.append(inputs[i:i+seq_length, ...])
+                        outputs_list.append(outputs[i+seq_length-1, ...])
+                else: # moving window = seq_length
+                    for i in range(0, inputs.shape[0] + 1, seq_length):
+                        inputs_list.append(inputs[i:i+seq_length, ...])
+                        outputs_list.append(outputs[i:i+seq_length, ...])
+                # add moving window < seq_length at the end ?
+                        
+        return np.array(inputs_list), np.array(outputs_list)
 
     def get_ivar_to_predict(self) -> int:
         """
@@ -147,7 +172,7 @@ class scenarIA(Dataset):
             idx (int): Index of the sample to retrieve.
 
         Returns:
-            tuple[Tensor, Tensor]: Transformed input (x) and target (y) tensors.
+            tuple[Tensor, Tensor]: Transformed input (x) and target (outputs) tensors.
         """
         data = dict(np.load(self.samples[idx], allow_pickle=True))
         x, y = data['x'], data['y'][:,:,:,self.get_ivar_to_predict()]
@@ -160,5 +185,9 @@ if __name__ == "__main__":
     config_path = Path('/gpfs-calypso/home/globc/garcia/scenarIA/configs/config.yaml')
     with open(config_path, 'r') as file:
         config = yaml.safe_load(file)
+
+    # test 1 : tout les membres sont moyennés les 50
+    config['data']['nb_member_per_subsets'] = 30
+    config['data']['nb_subsets'] = 4 # pas utilisé en principe
     dataset = scenarIA(transform=None, config=config, data_type='train')
 
