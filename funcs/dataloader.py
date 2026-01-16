@@ -1,6 +1,7 @@
 from curses import window
 from logging import config
 from pickletools import int4
+import time
 from torch.utils.data import Dataset, DataLoader
 from torchvision.transforms import v2
 import numpy as np
@@ -36,7 +37,7 @@ class scenarIA(Dataset):
         else:
             self.simus = config['train']['simus_test']
 
-        inputs, outputs = self.load_xr_data(Path(config['data']['dataset_path']),
+        inputs, outputs, time = self.load_xr_data(Path(config['data']['dataset_path']),
                                  inputs_list=config['train']['inputs'],
                                  outputs_list=config['train']['outputs'],
                                  seed_subsets=config['data']['seed_subsets'],
@@ -46,6 +47,7 @@ class scenarIA(Dataset):
                                  predict_only_last_timestep=self.predict_only_last_timestep)
         print('final inputs shape', inputs.shape)
         print('final outputs shape', outputs.shape)
+        print('time length', len(time), time[0], time)
 
         # annual mean
         # concatenate with historical is necessary (after mean of members)
@@ -61,7 +63,7 @@ class scenarIA(Dataset):
         else: 
             self.samples = list_samples[split_index:]
         ''' 
-    def load_xr_data(self,
+    def load_data(self,
                         dataset_path,
                         inputs_list,
                         outputs_list,
@@ -84,6 +86,7 @@ class scenarIA(Dataset):
 
         inputs_all = []
         outputs_all = []   
+        time_all = []
 
         for simu in self.simus:
             print(simu)
@@ -100,27 +103,29 @@ class scenarIA(Dataset):
                                                                 seed_subsets, 
                                                                 nb_member_per_subsets,
                                                                 mean=True)
-                inputs, outputs = self.build_sequence_samples_from_xr(inputs_xr, 
+                inputs, outputs, time = self.build_sequence_samples_from_xr(inputs_xr, 
                                                         outputs_xr,
                                                         seq_length,
                                                         predict_only_last_timestep)
                 inputs_all.append(inputs)
-                outputs_all.append(outputs) 
-            else:
+                outputs_all.append(outputs)
+                time_all += time
+            else:   
                 print('one-to-many approach')
                 for i in range(nb_subsets):
                     ds_subset = self.get_random_member_subset(outputs_xr_ensemble, 
                                                             seed_subsets + i, 
                                                             nb_member_per_subsets,
                                                             mean=True)
-                    inputs, outputs = self.build_sequence_samples_from_xr(inputs_xr, 
+                    inputs, outputs, time = self.build_sequence_samples_from_xr(inputs_xr, 
                                                             ds_subset,
                                                             seq_length,
                                                             predict_only_last_timestep)
                     inputs_all.append(inputs)
                     outputs_all.append(outputs)
+                    time_all += time
             print(f'nombre de sous ensemble pour {simu}', np.concatenate(outputs_all, axis=0).shape)
-        return np.concatenate(inputs_all, axis=0), np.concatenate(outputs_all, axis=0)
+        return np.concatenate(inputs_all, axis=0), np.concatenate(outputs_all, axis=0), time_all
 
 
     
