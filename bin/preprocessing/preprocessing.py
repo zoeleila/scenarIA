@@ -31,4 +31,4 @@ if __name__ == "__main__":
     for file in files:
         ds = xr.open_dataset(file)
         ds = mpi_esm1_2_lr_annual_outputs_formatting(ds)
-        ds.to_netcdf(file.replace('.nc', '_2.nc'))
+        #ds.to_netcdf(file.replace('.nc', '_2.nc'))

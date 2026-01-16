@@ -16,6 +16,8 @@ from pathlib import Path
 import re
 import xarray as xr
 
+from scenarIA.funcs.transforms import ToTensor, Normalize
+
 
 class scenarIA(Dataset):
     def __init__(self,
@@ -25,36 +27,37 @@ class scenarIA(Dataset):
         self.transform = transform
         self.data_type = data_type
         self.dataset_path = Path(config['data']['dataset_path'])
-        self.inputs = config['train']['inputs']
-        self.outputs = config['train']['outputs']
+        self.inputs_var_list = config['train']['inputs']
+        self.outputs_var_list = config['train']['outputs']
         self.val_size = config['train']['val_size']
         self.piControl_diff = config['data']['piControl_diff']
         self.seq_length = config['data']['seq_length']
-        self.predict_only_last_timestep = config['data']['predict_only_last_timestep']
+        self.predict_only_last_timestep = bool(config['data']['predict_only_last_timestep'])
+        self.nb_subsets = config['data']['nb_subsets']
+        self.seed_subsets = config['data']['seed_subsets']
+        self.nb_member_per_subsets = config['data']['nb_member_per_subsets']
+        self.one_to_many = bool(config['data']['one_to_many'])
+        
+        if data_type == 'val':
+            self.simus = config['train']['simus_train'] # The split between train and val is done after loading all the data.
+        else :
+            self.simus = config['train'][f'simus_{data_type}']
 
-        if self.data_type == 'train' or self.data_type == 'val':
-            self.simus = config['train']['simus_train']
+        if data_type == 'test' or data_type == 'inference':
+            self.one_to_many = False
+
+        self.load_inputs()
+        if self.data_type == 'inference':
+            self.outputs = None
         else:
-            self.simus = config['train']['simus_test']
+            self.load_outputs()
 
-        inputs, outputs, time = self.load_xr_data(Path(config['data']['dataset_path']),
-                                 inputs_list=config['train']['inputs'],
-                                 outputs_list=config['train']['outputs'],
-                                 seed_subsets=config['data']['seed_subsets'],
-                                 nb_member_per_subsets=config['data']['nb_member_per_subsets'],
-                                 nb_subsets=config['data']['nb_subsets'],
-                                 seq_length=self.seq_length,
-                                 predict_only_last_timestep=self.predict_only_last_timestep)
-        print('final inputs shape', inputs.shape)
-        print('final outputs shape', outputs.shape)
-        print('time length', len(time), time[0], time)
+        print('final inputs shape', self.inputs.shape, self.inputs.shape[0])
+        print('final outputs shape', self.outputs.shape)
+        print('time length', len(self.time), self.time[0], self.time)
 
         # annual mean
-        # concatenate with historical is necessary (after mean of members)
         # pi control
-        # define sequence length
-        # return x = np.array(num_samples, seq_length, height, width, channels)
-        # return y = np.array(num_samples, seq_length or last time step, height, width, channels)
 
         '''
         split_index = int(len(list_samples) * (1 - stop))
@@ -63,77 +66,84 @@ class scenarIA(Dataset):
         else: 
             self.samples = list_samples[split_index:]
         ''' 
-    def load_data(self,
-                        dataset_path,
-                        inputs_list,
-                        outputs_list,
-                        seed_subsets: int,
-                        nb_member_per_subsets: int,
-                        nb_subsets: int,
-                        seq_length: int,
-                        predict_only_last_timestep: bool
-                     ) -> tuple[dict, dict]:
+
+    def load_inputs(self):
         """
-        Loads input (inputs) and output (outputs) data from NetCDF files for each simulation
+        Loads input (inputs) data from NetCDF files for each simulation
         specified in self.simus.
         inputs = {'simu_name': ds}
-        outputs = {'simu_name':[ds1, ds2,...]} # list of forced responses from random subsets. 
-        If one-to-one, list of one element.
-        Returns:
-            tuple[dict, dict]: Two dictionaries containing input and output data
-            for each simulation.
         """
 
-        inputs_all = []
-        outputs_all = []   
+        inputs_all = []   
         time_all = []
 
         for simu in self.simus:
             print(simu)
 
-            inputs_xr = xr.open_dataset(dataset_path / f'inputs_{simu}.nc')[inputs_list]
-            outputs_xr_ensemble = xr.open_dataset(dataset_path / f'outputs_{simu}.nc')[outputs_list]
+            inputs_xr = xr.open_dataset(self.dataset_path / f'inputs_{simu}.nc')[self.inputs_var_list]
 
-            if nb_subsets == 1:
+            if not self.one_to_many:
                 print('one-to-one approach')
-                if outputs_xr_ensemble.member.size == nb_member_per_subsets or outputs_xr_ensemble.member.size < nb_member_per_subsets:
+                inputs, time = self.build_sequence_samples_from_xr(inputs_xr, 'inputs')
+                inputs_all.append(inputs)
+                time_all += time
+            else:
+                print('one-to-many approach')
+                for i in range(self.nb_subsets):
+                    inputs, time = self.build_sequence_samples_from_xr(inputs_xr, 'inputs')
+                    inputs_all.append(inputs)
+                    time_all += time
+
+        inputs_concat = np.concatenate(inputs_all, axis=0) if len(inputs_all) > 0 else np.array([])
+        self.inputs = inputs_concat
+        self.time = time_all
+    
+    def load_outputs(self):
+        """
+        Loads output (outputs) data from NetCDF files for each simulation
+        specified in self.simus.
+        outputs = {'simu_name':[ds1, ds2,...]} # list of forced responses from random subsets. 
+        If one-to-one, list of one element.
+        """
+        outputs_all = []
+
+        for simu in self.simus:
+            print(simu)
+
+            outputs_xr_ensemble = xr.open_dataset(self.dataset_path / f'outputs_{simu}.nc')[self.outputs_var_list]
+
+            if self.data_type == 'test': # always compare with the best estimation of forced response
+                self.nb_member_per_subsets = outputs_xr_ensemble.member.size
+
+            if not self.one_to_many:
+                print('one-to-one approach')
+                if outputs_xr_ensemble.member.size == self.nb_member_per_subsets or outputs_xr_ensemble.member.size < self.nb_member_per_subsets:
                     outputs_xr = outputs_xr_ensemble.mean('member')
                 else:
                     outputs_xr = self.get_random_member_subset(outputs_xr_ensemble, 
-                                                                seed_subsets, 
-                                                                nb_member_per_subsets,
+                                                                self.seed_subsets, 
+                                                                self.nb_member_per_subsets,
                                                                 mean=True)
-                inputs, outputs, time = self.build_sequence_samples_from_xr(inputs_xr, 
-                                                        outputs_xr,
-                                                        seq_length,
-                                                        predict_only_last_timestep)
-                inputs_all.append(inputs)
+                outputs, _ = self.build_sequence_samples_from_xr(outputs_xr, 'outputs')
                 outputs_all.append(outputs)
-                time_all += time
             else:   
                 print('one-to-many approach')
-                for i in range(nb_subsets):
+                for i in range(self.nb_subsets):
                     ds_subset = self.get_random_member_subset(outputs_xr_ensemble, 
-                                                            seed_subsets + i, 
-                                                            nb_member_per_subsets,
+                                                            self.seed_subsets + i, 
+                                                            self.nb_member_per_subsets,
                                                             mean=True)
-                    inputs, outputs, time = self.build_sequence_samples_from_xr(inputs_xr, 
-                                                            ds_subset,
-                                                            seq_length,
-                                                            predict_only_last_timestep)
-                    inputs_all.append(inputs)
+                    outputs, _ = self.build_sequence_samples_from_xr(ds_subset, 'outputs')
                     outputs_all.append(outputs)
-                    time_all += time
-            print(f'nombre de sous ensemble pour {simu}', np.concatenate(outputs_all, axis=0).shape)
-        return np.concatenate(inputs_all, axis=0), np.concatenate(outputs_all, axis=0), time_all
-
-
+        outputs_concat = np.concatenate(outputs_all, axis=0) if len(outputs_all) > 0 else np.array([])
+        self.outputs = outputs_concat 
     
     def get_random_member_subset(self, 
                                  ds: xr.Dataset, 
                                  seed: int, 
                                  nb_member_per_subsets: int,
                                  mean: bool = True) -> xr.Dataset:
+        print('subsets')
         np.random.seed(seed)
         members = np.random.choice(ds.member.values, size=nb_member_per_subsets, replace=True)
         if mean:
@@ -141,49 +151,41 @@ class scenarIA(Dataset):
         return ds.sel(member=members)
 
     def build_sequence_samples_from_xr(self, 
-                              inputs_xr, 
-                              outputs_xr,
-                              seq_length: int,
-                              predict_only_last_timestep: bool):
-        inputs_list = []
-        outputs_list = []
+                              ds, 
+                              input_or_outputs:str):
+        '''
+        Builds sequence samples from an xarray Dataset. Returns expected predicted time series.
+        '''
+        data_list = []
         time_list = []
 
-        inputs = inputs_xr.to_array().transpose('time', 'lat', 'lon', 'variable').to_numpy()  
-        outputs = outputs_xr.to_array().transpose('time', 'lat', 'lon', 'variable').to_numpy()
-        time = inputs_xr.time.values
-        print('inputs shape', inputs.shape)
-        print('outputs shape', outputs.shape)
-        if predict_only_last_timestep:
-            print(' last')
-            for i in range(inputs.shape[0] - seq_length + 1):
-                inputs_list.append(inputs[i:i+seq_length, ...])
-                outputs_list.append(outputs[i+seq_length-1, ...].reshape(1, outputs.shape[1], outputs.shape[2], outputs.shape[3]))
-                time_list.append(time[i+seq_length-1])
+        data = ds.to_array().transpose('time', 'lat', 'lon', 'variable').to_numpy()
+        time = ds.time.values
+        print('data shape', data.shape)
+
+        if self.predict_only_last_timestep:
+            print('last time step of sequence')
+            for i in range(data.shape[0] - self.seq_length + 1):
+                if input_or_outputs == 'inputs':
+                    data_list.append(data[i:i+self.seq_length, ...])
+                else:
+                    data_list.append(data[i+self.seq_length-1, ...].reshape(1, data.shape[1], data.shape[2], data.shape[3]))
+                time_list.append(time[i+self.seq_length-1])
         else: # moving window = seq_length
-            print('no window')
-            for i in range(0, inputs.shape[0] + 1, seq_length):
-                inputs_list.append(inputs[i:i+seq_length, ...])
-                outputs_list.append(outputs[i:i+seq_length, ...])
-                time_list.append(time[i:i+seq_length])
+            print('whole sequence')
+            for i in range(0, data.shape[0] - self.seq_length + 1, self.seq_length):
+
+                data_list.append(data[i:i+self.seq_length, ...])
+                time_list.append(time[i:i+self.seq_length])
             # add moving window < seq_length at the end ?
-        # (nb exemples for this dataset, seq_length, lat, lon, channels)
-        print('inputs_list shape', np.array(inputs_list).shape)
-        print('outputs_list shape', np.array(outputs_list).shape)
-        return np.array(inputs_list), np.array(outputs_list), time_list
-
-    def get_ivar_to_predict(self) -> int:
-        """
-        Returns the index of the variable to predict based on its name.
-        """
-        return self.vars_to_predict.index(self.var_to_predict)
-
+        print('data_list shape', np.array(data_list).shape)
+        return np.array(data_list), time_list
 
     def __len__(self) -> int:
         """
         Returns the number of samples in the dataset.
         """
-        return len(self.samples)
+        return self.inputs.shape[0]
     
     def __getitem__(self, idx: int) -> tuple[Tensor, Tensor]:
         """
@@ -193,23 +195,64 @@ class scenarIA(Dataset):
             idx (int): Index of the sample to retrieve.
 
         Returns:
-            tuple[Tensor, Tensor]: Transformed input (x) and target (outputs) tensors.
+            tuple[Tensor, Tensor, str or List(str)]: Transformed input (x) and target (outputs) tensors.
+            t is either one date value or a list of dates depending on predict_only_last_timestep
         """
-        data = dict(np.load(self.samples[idx], allow_pickle=True))
-        x, y = data['x'], data['y'][:,:,:,self.get_ivar_to_predict()]
+        x = self.inputs[idx, ...]
+        y = self.outputs[idx, ...]
+        t = self.time[idx]
         if self.transform:
             x, y = self.transform((x, y))
             x.float(), y.float()
-        return x, y 
+        return x, y, t
+
+def get_dataloaders(data_type: str, config:dict, transforms:bool=True) -> DataLoader:
+    """
+    Creates and returns a PyTorch DataLoader for the specified data type.
+    Args:
+        data_type (str): The type of data to load. Expected values are 'train' or other types
+                            (e.g., 'validation', 'test'). Determines the shuffle behavior and batch size.
+    Returns:
+        DataLoader: A PyTorch DataLoader object configured with the appropriate dataset,
+                    transformations, batch size, and shuffle settings.
+    """
+    if transforms:
+        transforms = v2.Compose([ToTensor(),
+                                 Normalize(dataset_dir=Path(config['data']['dataset_dir']))])
+    else:
+        transforms = v2.Compose([ToTensor()])
+    
+    dataset = scenarIA(transform=transforms,
+                            config=config,
+                            data_type=data_type)
+    
+    if data_type == 'train':
+        batch_size = config['train']['batch_size']
+    else : 
+        batch_size = 1
+    
+    if data_type == 'train':
+        shuffle = True
+    else: 
+        shuffle = False
+
+    dataloader = DataLoader(dataset, 
+                            batch_size=batch_size, 
+                            shuffle=shuffle,
+                            num_workers=1)
+    return dataloader
+
 
 if __name__ == "__main__":
     config_path = Path('/gpfs-calypso/home/globc/garcia/scenarIA/configs/config.yaml')
     with open(config_path, 'r') as file:
         config = yaml.safe_load(file)
 
-    # test 1 : tout les membres sont moyennés les 50
-    config['data']['nb_member_per_subsets'] = 30
-    config['data']['nb_subsets'] = 4 # pas utilisé en principe
-    config['train']['simus_train'] = ['ssp126', 'historical']
-    dataset = scenarIA(transform=None, config=config, data_type='train')
+    train_dataloader = get_dataloaders(data_type='train', config=config, transforms=False)
+    for i, batch in enumerate(train_dataloader):
+        x, y, t = batch
+        print(t)
+        print('x shape:', x.shape)
+        print('y shape:', y.shape)
+
 

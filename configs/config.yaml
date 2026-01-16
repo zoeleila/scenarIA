@@ -6,8 +6,9 @@ data:
   forcings: ['CO2', 'SO2', 'CH4', 'BC']
   variables: ['tas', 'pr']
   seed_subsets: 42 # to choose subsets of members
-  nb_member_per_subsets: 50 # one-to-many approach. If n = 1, individual approach.
-  nb_subsets: 20 # number of subsets to create (only if one-to-many)
+  nb_member_per_subsets: 30 # one-to-many approach. If n = 1, individual approach.
+  one_to_many : True
+  nb_subsets: 4 # number of subsets to create (only if one-to-many is True)
   piControl_diff: True # whether the output is a difference with piControl or not
   predict_only_last_timestep: True # need to concatenate with historical to get the whole seq
   timescale: 'annual'
@@ -27,6 +28,7 @@ train: # for training
   test_name: 'test1'
   simus_train: ['historical', 'ssp126', 'ssp370', 'ssp585']
   simus_test: ['ssp245']
+  simus_inference: ['ssp245']
   img_size: [96, 192]
   scheduler_step_size: 50
   scheduler_gamma: 0.1
