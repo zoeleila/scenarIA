@@ -7,12 +7,13 @@ data:
   variables: ['tas', 'pr']
   seed_subsets: 42 # to choose subsets of members
   nb_member_per_subsets: 30 # one-to-many approach. If n = 1, individual approach.
-  one_to_many : True
-  nb_subsets: 4 # number of subsets to create (only if one-to-many is True)
+  one_to_many : False
+  nb_subsets: 1 # number of subsets to create (only if one-to-many is True)
   piControl_diff: True # whether the output is a difference with piControl or not
   predict_only_last_timestep: True # need to concatenate with historical to get the whole seq
   timescale: 'annual'
   seq_length: 10
+  moving_window: 1
 
 
 train: # for training

@@ -1,6 +1,6 @@
 import glob
 import xarray as xr
-from scenarIA.funcs.datautils import compute_annual_means, time_format_conversion, dataset_xr_formatting
+from src.utils.datautils import compute_annual_means, time_format_conversion, dataset_xr_formatting
 
 def mpi_esm1_2_lr_annual_outputs_formatting(ds):
     # Data retrived from Lutjens et al. (2025) 10.48550/arXiv.2408.05288
