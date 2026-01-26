@@ -11,10 +11,7 @@ class ToTensor:
     
 class Normalize:
     """Normalize a tensor sample with mean and standard deviation."""
-    def __init__(self, dataset_dir):
-        stats_path = dataset_dir / 'statistics.json'
-        with open(stats_path, 'r') as f:
-            stats = json.load(f)
+    def __init__(self, stats):
         self.mean = torch.tensor([stats[c]['mean'] for c in stats])
         self.std = torch.tensor([stats[c]['std'] for c in stats])
 
@@ -50,3 +47,7 @@ class DiffClimatology: # a modifier
         assert y.shape[1:] == self.climatology.shape, "Climatology shape does not match y shape."
         y = y - self.climatology[np.newaxis, ...]
         return x, y
+    
+
+# padding
+# inerpol

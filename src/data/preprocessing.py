@@ -2,6 +2,13 @@ import glob
 import xarray as xr
 from src.utils.datautils import compute_annual_means, time_format_conversion, dataset_xr_formatting
 
+# TODO : Check data class to create dataset with same time format, unit, lat (-90,90), lon (0, 360)
+# class input and output ?
+
+
+
+
+
 def mpi_esm1_2_lr_annual_outputs_formatting(ds):
     # Data retrived from Lutjens et al. (2025) 10.48550/arXiv.2408.05288
     ds = dataset_xr_formatting(ds,

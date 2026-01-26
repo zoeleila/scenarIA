@@ -11,8 +11,11 @@ from tqdm import tqdm
 from pathlib import Path
 import xarray as xr
 import json
+import os
+import copy
 
 from scenarIA.src.utils.transforms import ToTensor, Normalize
+from scenarIA.src.utils.settings import RUNS_DIR, DATASET_DIR
 
 
 class scenarIA(Dataset):
@@ -23,11 +26,10 @@ class scenarIA(Dataset):
         self.transform = transform
         self.data_type = data_type
         self.seed = config['train']['seed']
-        self.dataset_path = Path(config['data']['dataset_path'])
+        self.dataset_path = DATASET_DIR / config['data']['dataset_path']
         self.inputs_var_list = config['train']['inputs']
         self.outputs_var_list = config['train']['outputs']
         self.val_size = config['train']['val_size']
-        self.piControl_diff = config['data']['piControl_diff']
         self.seq_length = config['data']['seq_length']
         self.moving_window = config['data'].get('moving_window', 1)
         self.predict_only_last_timestep = bool(config['data']['predict_only_last_timestep'])
@@ -53,10 +55,6 @@ class scenarIA(Dataset):
         else:
             self.load_outputs()
 
-        print('final inputs shape', self.inputs.shape, self.inputs.shape[0])
-        print('final outputs shape', self.outputs.shape)
-        print('time length', len(self.time), self.time[0])
-
         # annual mean
         # pi control
 
@@ -74,7 +72,7 @@ class scenarIA(Dataset):
             self.inputs = self.inputs[split_index:]
             self.outputs = self.outputs[split_index:]
         
-        print('final inputs shape shuffle', self.inputs.shape, self.inputs.shape[0])
+        print('final inputs shape shuffle', self.inputs.shape)
         print('final outputs shape shuffle', self.outputs.shape)
         print('time length shuffle', len(self.time), self.time[0])
    
@@ -89,7 +87,6 @@ class scenarIA(Dataset):
         time_all = []
 
         for simu in self.simus:
-            print(simu)
             inputs_xr = xr.open_dataset(self.dataset_path / f'inputs_{simu}.nc')[self.inputs_var_list]
 
             for i in range(self.nb_subsets if self.one_to_many else 1):
@@ -117,7 +114,6 @@ class scenarIA(Dataset):
         outputs_all = []
 
         for simu in self.simus:
-            print(simu)
             outputs_xr_ensemble = xr.open_dataset(self.dataset_path / f'outputs_{simu}.nc')[self.outputs_var_list]
             member_size = outputs_xr_ensemble.member.size
 
@@ -146,6 +142,7 @@ class scenarIA(Dataset):
                 outputs_all.append(outputs)
 
         self.outputs = np.concatenate(outputs_all, axis=0) if len(outputs_all) > 0 else np.array([])
+        self.outputs = np.squeeze(self.outputs, axis=-1) # modify loss and models to match multivariate
     
     @staticmethod
     def get_random_member_subset(
@@ -240,9 +237,18 @@ def get_dataloaders(data_type: str, config:dict, transforms:bool=True) -> DataLo
         DataLoader: A PyTorch DataLoader object configured with the appropriate dataset,
                     transformations, batch size, and shuffle settings.
     """
+    seed = config['train']['seed']
     if transforms:
+        statistic_file = RUNS_DIR / config['train']['runs_dir'] / 'statistics.json'
+        if not statistic_file.exists():
+            stats = compute_statistics(copy.deepcopy(config), seeds=seed)
+        else:
+           with open(statistic_file, 'r') as f:
+               stats = json.load(f)
+        if str(seed) not in stats:
+           stats = compute_statistics(copy.deepcopy(config), seeds=seed)
         transforms = v2.Compose([ToTensor(),
-                                 Normalize(dataset_dir=Path(config['data']['dataset_dir']))])
+                                 Normalize(stats = stats[str(seed)])])
     else:
         transforms = v2.Compose([ToTensor()])
     
@@ -261,22 +267,45 @@ def get_dataloaders(data_type: str, config:dict, transforms:bool=True) -> DataLo
                             num_workers=1)
     return dataloader
 
-def compute_statistics(config):
-    dataset = scenarIA(transform=None,
-                        config=config,
-                        data_type='train')
-    mean, std, min, max = dataset.get_stats()
-    stats = {}
-    for i, var in enumerate(config['train']['inputs']):
-        stats[var] = {
-            'mean': float(mean[i]),
-            'std': float(std[i]),
-            'min': float(min[i]),
-            'max': float(max[i])
-        }
-    stats_path = Path(config['data']['dataset_dir']) / 'statistics.json'
+
+def compute_statistics(config, seeds: int = 42):
+    if isinstance(seeds, int):
+        seeds = [seeds]
+    runs_dir = RUNS_DIR / config['train']['runs_dir']
+    stats_path = runs_dir / 'statistics.json'
+    config['data']['one_to_many'] = False
+    config['data']['seq_length'] = 1
+
+    if stats_path.exists():
+        try:
+            with open(stats_path, 'r') as f:
+                stats = json.load(f)
+        except Exception:
+            stats = {}
+    else:
+        stats = {}
+
+    for seed in seeds:
+        config['train']['seed'] = seed
+        dataset = scenarIA(transform=None,
+                            config=config,
+                            data_type='train')
+        mean_arr, std_arr, min_arr, max_arr = dataset.get_stats()
+        seed_key = str(seed)
+        stats.setdefault(seed_key, {})
+        for i, var in enumerate(config['train']['inputs']):
+            stats[seed_key][var] = {
+                'mean': float(mean_arr[i]),
+                'std': float(std_arr[i]),
+                'min': float(min_arr[i]),
+                'max': float(max_arr[i])
+            }
+
+    os.makedirs(runs_dir, exist_ok=True)
     with open(stats_path, 'w') as f:
-        json.dump(stats, f)
+        json.dump(stats, f, indent=2)
+
+    return stats
 
 
 if __name__ == "__main__":
@@ -286,12 +315,7 @@ if __name__ == "__main__":
         config = yaml.safe_load(file)
 
     config['train']['simus_train'] = ['ssp126', 'historical']
-    train_dataloader = get_dataloaders(data_type='train', config=config, transforms=False)
-    for i, batch in enumerate(train_dataloader):
-        x, y, t = batch
-        #print('x shape:', x.shape)
-        #print('y shape:', y.shape)
-    print('val')
-    val_dataloader = get_dataloaders(data_type='val', config=config, transforms=False)
-
-
+    train_dataloader = get_dataloaders('train', config)
+    for x, y, t in tqdm(train_dataloader):
+        print(x.shape, y.shape, t)
+        break

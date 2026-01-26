@@ -1,32 +1,30 @@
 data:
-  exp: 'MPI-annual'
+  exp: 'exp1'
   model_name: 'MPI-ESM1-2-LR'
-  raw_path: '/scratch/globc/garcia/scenarIA/rawdata/MPI-ESM1-2-LR/r1-r50i1p1f1/'
-  dataset_path: '/scratch/globc/garcia/scenarIA/datasets/MPI-ESM1-2-LR/annual/'
-  forcings: ['CO2', 'SO2', 'CH4', 'BC']
-  variables: ['tas', 'pr']
-  seed_subsets: 42 # to choose subsets of members
+  raw_path: 'MPI-ESM1-2-LR/r1-r50i1p1f1/'
+  dataset_path: 'MPI-ESM1-2-LR/annual/'
+  seed_subsets: 42 
   nb_member_per_subsets: 30 # one-to-many approach. If n = 1, individual approach.
-  one_to_many : False
-  nb_subsets: 1 # number of subsets to create (only if one-to-many is True)
-  piControl_diff: True # whether the output is a difference with piControl or not
-  predict_only_last_timestep: True # need to concatenate with historical to get the whole seq
+  one_to_many: False
+  nb_subsets: 1 # only if one-to-many is True
+  piControl_diff: True 
+  predict_only_last_timestep: True
   timescale: 'annual'
   seq_length: 10
   moving_window: 1
 
 
 train: # for training
-  val_size: 0.2 # proportion of the data used for validationval_size: 0.2 # proportion of the data used for validation
-  seed: 42 # for reproducibility of shuffling and weight initialization
+  val_size: 0.2
+  seed: 42
   arch: 'cnn-lstm'
   learning_rate: 0.001
-  max_epochs: 30
+  max_epochs: 5
   batch_size: 16
-  runs_dir: '/scratch/globc/garcia/scenarIA/runs/MPI-annual/50_member_mean' #(à changer) ne pas mettre test name
+  runs_dir: 'MPI-ESM1-2-LR/annual/exp1/' 
   inputs: ['CO2', 'SO2', 'CH4', 'BC']
-  outputs: ['tas', 'pr']
-  test_name: 'test1'
+  outputs: ['tas']
+  test_name: 'cnn-lstm_42_10_30'
   simus_train: ['historical', 'ssp126', 'ssp370', 'ssp585']
   simus_test: ['ssp245']
   simus_inference: ['ssp245']
