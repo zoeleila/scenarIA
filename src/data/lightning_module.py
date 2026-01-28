@@ -18,6 +18,8 @@ from torchmetrics import PearsonCorrCoef, MeanSquaredError, MeanAbsoluteError
 
 from scenarIA.src.models.CNNLSTM import CNNLSTMModel
 from scenarIA.src.utils.losses import LLweighted_MSELoss_Climax
+from scenarIA.src.utils.metrics import NRMSE_ClimateBench
+from scenarIA.src.utils.datautils import weighted_global_mean
 from scenarIA.src.utils.settings import RUNS_DIR
 
 
@@ -42,8 +44,9 @@ class scenarIALightningModule(pl.LightningModule):
         self.predict_only_last_timestep = config['data']['predict_only_last_timestep']
         os.makedirs(self.runs_dir, exist_ok=True)
 
-        self.loss = LLweighted_MSELoss_Climax()
-
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.lats = torch.linspace(-90, 90, self.img_size[0]).to(device)
+        self.loss = LLweighted_MSELoss_Climax(lats=self.lats)
         self.metrics_dict = nn.ModuleDict({
                     "rmse": MeanSquaredError(squared=True),
                     "mae": MeanAbsoluteError()
@@ -56,6 +59,7 @@ class scenarIALightningModule(pl.LightningModule):
         self.val_step_outputs = []
         self.test_step_outputs_true = []
         self.test_step_outputs_hat = []
+        self.test_step_times = []
         
         self.save_hyperparameters()
         self.epoch_start_time = None
@@ -116,7 +120,7 @@ class scenarIALightningModule(pl.LightningModule):
 
         
     def test_step(self, batch, batch_idx):
-        x, y, _ = batch
+        x, y, t = batch
         y_hat, loss = self.common_step(x, y)
         self.log("test_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
             
@@ -128,12 +132,15 @@ class scenarIALightningModule(pl.LightningModule):
             metric.reset()
         self.test_metrics[batch_idx] = batch_dict
 
-        y_flat = y.flatten()
-        y_hat_flat = y_hat.flatten()
+        y_flat = y.mean(dim=1).flatten() # [batch, lat, lon]
+        print('y_flat', y_flat.shape)
+        y_hat_flat = y_hat.mean(dim=1).flatten()
+        print('y_hat_flat', y_hat_flat.shape)
         self.spatial_corr_metric.update(y_hat_flat, y_flat)
 
-        self.test_step_outputs_true.append(y.cpu().numpy().mean())
-        self.test_step_outputs_hat.append(y_hat.cpu().numpy().mean())
+        self.test_step_outputs_true.append(y)
+        self.test_step_outputs_hat.append(y_hat)
+        self.test_step_times.append(t)
 
         if batch_idx == 0:
 
@@ -166,16 +173,25 @@ class scenarIALightningModule(pl.LightningModule):
         df = self.build_metrics_dataframe()
         self.save_test_metrics_as_csv(df)
         df = df.drop("Name", axis=1)
-        self.log('hp_metric', df['rmse'].mean()) # TODO : a la place mettre NRMSE qu'on compute à partir de test_step_outputs
+
+        y_all = torch.stack(self.test_step_outputs_true, axis=0).view(-1, self.img_size[0], self.img_size[1])
+        y_hat_all = torch.stack(self.test_step_outputs_hat, axis=0).view(-1, self.img_size[0], self.img_size[1])
+        t_all = torch.cat(self.test_step_times)
+        print('jbdjefjdfjh')
+        print(weighted_global_mean(y_all, self.lats).cpu().numpy())
+        print(weighted_global_mean(y_hat_all, self.lats).cpu().numpy())
+
+        self.log('hp_metric', NRMSE_ClimateBench(y_hat_all, y_all, self.lats))
         self.log('loss', df['loss'].mean())
 
         spatial_corr = self.spatial_corr_metric.compute()
         self.log("hp_metric_corr", spatial_corr)
         
+        # TODO external function func(y, y_hat, time, var info) return fig
         fig, ax = plt.subplots()
-        ax.plot(self.test_step_outputs_true, label='True')
-        ax.plot(self.test_step_outputs_hat, label='Predicted')
-        ax.set_xlabel('year')
+        ax.plot(weighted_global_mean(y_all, self.lats).cpu().numpy(), label='True')
+        ax.plot(weighted_global_mean(y_hat_all, self.lats).cpu().numpy(), label='Predicted')
+        ax.set_xlabel('year') # TODO change according to time features
         ax.set_ylabel(f'{self.outputs} value')
         ax.legend()
         self.logger.experiment.add_figure('Figure/test_true_vs_predicted', fig)

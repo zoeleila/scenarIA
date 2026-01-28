@@ -1,4 +1,5 @@
 import xarray as xr
+import torch
 import numpy as np
 
 def compute_annual_means(ds, resample_time='Y'):
@@ -45,3 +46,32 @@ def dataset_xr_formatting(ds,
         pass
     
     return ds
+
+def compute_weights_from_lats(lats, deg2rad=True):
+    if isinstance(lats, np.ndarray):
+        if deg2rad:
+            weights = np.cos((np.pi * lats) / 180)
+        else:
+            weights = np.cos(lats)
+        weights = weights[:, np.newaxis]  # expand to lon dimension
+    elif isinstance(lats, torch.Tensor):
+        if deg2rad:
+            weights = torch.cos((torch.pi * lats) / 180)
+        else:
+            weights = torch.cos(lats)
+        weights = weights[:, None]  # expand to lon dimension
+    return weights
+
+def weighted_global_mean(data, lats, deg2rad=True):
+    if isinstance(data, np.ndarray):
+        assert lats.shape[0] == data.shape[-2], "Latitude dimension does not match data shape."
+        weights = compute_weights_from_lats(lats, deg2rad=deg2rad)
+        data = np.mean(data * weights, axis=(-2, -1))
+
+    if isinstance(data, torch.Tensor):
+        assert lats.shape[0] == data.shape[-2], "Latitude dimension does not match data shape."
+        weights = compute_weights_from_lats(lats, deg2rad=deg2rad)
+        data = torch.mean(data * weights, dim=(-2, -1))
+    # TODO for xr.dataset
+    return data
+    

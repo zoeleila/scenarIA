@@ -5,8 +5,8 @@ data:
   dataset_path: 'MPI-ESM1-2-LR/annual/'
   seed_subsets: 42 
   nb_member_per_subsets: 30 # one-to-many approach. If n = 1, individual approach.
-  one_to_many: False
-  nb_subsets: 1 # only if one-to-many is True
+  one_to_many: True
+  nb_subsets: 3 # only if one-to-many is True
   piControl_diff: True 
   predict_only_last_timestep: True
   timescale: 'annual'
@@ -19,9 +19,9 @@ train: # for training
   seed: 42
   arch: 'cnn-lstm'
   learning_rate: 0.001
-  max_epochs: 5
-  batch_size: 16
-  runs_dir: 'MPI-ESM1-2-LR/annual/exp1/' 
+  max_epochs: 30
+  batch_size: 4
+  runs_dir: 'MPI-ESM1-2-LR/annual/exp1/cnn-lstm_42_10_30' 
   inputs: ['CO2', 'SO2', 'CH4', 'BC']
   outputs: ['tas']
   test_name: 'cnn-lstm_42_10_30'

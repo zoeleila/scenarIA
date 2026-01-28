@@ -5,7 +5,7 @@ from scenarIA.src.utils.settings import RUNS_DIR
 
 def save_infos_from_config(config: dict) -> dict:
     runs_dir = RUNS_DIR / config['train']['runs_dir']
-    exp_infos = runs_dir.parent / 'experiment_infos.yaml'
+    exp_infos = runs_dir.parent.parent / 'experiment_infos.yaml' # data and training settings root
     print(f'Experiment infos will be saved to {exp_infos}')
     
     if exp_infos.exists():

@@ -16,6 +16,7 @@ import copy
 
 from scenarIA.src.utils.transforms import ToTensor, Normalize
 from scenarIA.src.utils.settings import RUNS_DIR, DATASET_DIR
+from scenarIA.src.utils.datautils import weighted_global_mean
 
 
 # plot dataset ?
@@ -86,24 +87,21 @@ class scenarIA(Dataset):
         inputs = {'simu_name': ds}
         """
         inputs_all = []
-        time_all = []
 
         for simu in self.simus:
             inputs_xr = xr.open_dataset(self.dataset_path / f'inputs_{simu}.nc')[self.inputs_var_list]
 
-            for i in range(self.nb_subsets if self.one_to_many else 1):
-                inputs, time = scenarIA.build_sequence_array_from_xr(
+            for _ in range(self.nb_subsets if self.one_to_many else 1):
+                inputs, _ = scenarIA.build_sequence_array_from_xr(
                     inputs_xr,
                     seq_length=self.seq_length,
                     predict_only_last_timestep=False,
                     moving_window=self.moving_window
                 )
                 inputs_all.append(inputs)
-                time_all += time
 
         inputs_concat = np.concatenate(inputs_all, axis=0) if len(inputs_all) > 0 else np.array([])
         self.inputs = inputs_concat
-        self.time = time_all
     
     def load_outputs(self):
         """
@@ -114,6 +112,7 @@ class scenarIA(Dataset):
         - if self.one_to_many is True, we draw self.nb_subsets random subsets with different seeds.
         """
         outputs_all = []
+        time_all = []
 
         for simu in self.simus:
             outputs_xr_ensemble = xr.open_dataset(self.dataset_path / f'outputs_{simu}.nc')[self.outputs_var_list]
@@ -135,16 +134,18 @@ class scenarIA(Dataset):
                         mean=True
                     )
 
-                outputs, _ = scenarIA.build_sequence_array_from_xr(
+                outputs, time = scenarIA.build_sequence_array_from_xr(
                     outputs_xr,
                     seq_length=self.seq_length,
                     predict_only_last_timestep=self.predict_only_last_timestep,
                     moving_window=self.moving_window
                 )
                 outputs_all.append(outputs)
+                time_all += time
 
         self.outputs = np.concatenate(outputs_all, axis=0) if len(outputs_all) > 0 else np.array([])
-        self.outputs = np.squeeze(self.outputs, axis=-1) # modify loss and models to match multivariate
+        self.outputs = np.squeeze(self.outputs, axis=-1) # remove for multi variate ???
+        self.time = time_all
     
     @staticmethod
     def get_random_member_subset(
@@ -241,7 +242,8 @@ def get_dataloaders(data_type: str, config:dict, transforms:bool=True) -> DataLo
     """
     seed = config['train']['seed']
     if transforms:
-        statistic_file = RUNS_DIR / config['train']['runs_dir'] / 'statistics.json'
+        runs_dir = RUNS_DIR / config['train']['runs_dir']
+        statistic_file =  runs_dir.parent / 'statistics.json' # only data settings
         if not statistic_file.exists():
             stats = compute_statistics(copy.deepcopy(config), seeds=seed)
         else:
@@ -274,7 +276,7 @@ def compute_statistics(config, seeds: int = 42):
     if isinstance(seeds, int):
         seeds = [seeds]
     runs_dir = RUNS_DIR / config['train']['runs_dir']
-    stats_path = runs_dir / 'statistics.json'
+    stats_path = runs_dir.parent / 'statistics.json'
     config['data']['one_to_many'] = False
     config['data']['seq_length'] = 1
 
@@ -312,12 +314,18 @@ def compute_statistics(config, seeds: int = 42):
 
 if __name__ == "__main__":
 
+    import matplotlib.pyplot as plt
     config_path = Path('/gpfs-calypso/home/globc/garcia/scenarIA/configs/config.yaml')
     with open(config_path, 'r') as file:
         config = yaml.safe_load(file)
 
-    config['train']['simus_train'] = ['ssp126', 'historical']
-    train_dataloader = get_dataloaders('train', config)
-    for x, y, t in tqdm(train_dataloader):
-        print(x.shape, y.shape, t)
-        break
+    dataset = scenarIA(config=config, transform=v2.Compose([ToTensor()]), data_type='test')
+    outputs = dataset.outputs
+    outputs = outputs.reshape(-1, outputs.shape[-2], outputs.shape[-1])
+
+    plt.figure()
+    plt.plot(weighted_global_mean(outputs, lats= np.linspace(-90, 90, outputs.shape[-2])), label='True')
+    plt.plot(np.mean(outputs, axis=(1,2)), label='no weight')
+    plt.legend()
+    plt.savefig('utils/test1')
+    

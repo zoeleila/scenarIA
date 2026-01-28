@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 
+from scenarIA.src.utils.datautils import compute_weights_from_lats
+
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 ######################################
@@ -145,6 +147,7 @@ class NRMSELoss_ClimateBench(nn.Module):
 class LLweighted_MSELoss_Climax(nn.Module):
     """
     Latitude weighted mean squared error taken from ClimaX.
+    Mean over all grid point weighted MSE
     
     y : [batch, time, lat, lon]
     pred : [batch, time, lat, lon]
@@ -153,24 +156,19 @@ class LLweighted_MSELoss_Climax(nn.Module):
     returns scalar
     """
 
-    def __init__(self, deg2rad: bool = True, mask=None):
+    def __init__(self, lats, deg2rad: bool = True, mask=None):
         super().__init__()
 
         self.mse = nn.MSELoss(reduction="none")
         self.deg2rad = deg2rad
         self.mask = mask
+        self.lats = lats
 
     def forward(self, pred, y):
         mse = self.mse(pred, y)
+        weights = compute_weights_from_lats(lats=self.lats, 
+                                            deg2rad=self.deg2rad)
 
-        # lattitude weights
-        if self.deg2rad:
-            weights = torch.cos((torch.pi * torch.arange(y.shape[-2])) / 180)
-        else:
-            weights = torch.cos(torch.arange(y.shape[-2]))
-        weights = weights.unsqueeze(-1)
-
-        # they normalize the weights first
         weights = weights / weights.mean()
         weights = weights.to(device)
         if self.mask is not None:
@@ -185,6 +183,9 @@ class LLweighted_MSELoss_Climax(nn.Module):
 ######################################
 
 class LatWeightedMeanSquaredError(nn.Module):
+    """
+    Sum over all grid point weighted MSE
+    """
     def __init__(self,
                 reduction="sum_over_batch_size",
                 device='cpu'):
@@ -224,8 +225,8 @@ if __name__ == "__main__":
     lat = 96
     dummy = torch.rand(size=(batch_size, out_time, lat, lon))
 
-    targets = torch.rand(size=(batch_size, 1, lat, lon))
+    targets = torch.rand(size=(batch_size, out_time, lat, lon))
 
-    loss_fn = LLweighted_MSELoss_Climax(deg2rad=True)
+    loss_fn = LLweighted_MSELoss_Climax(lats = torch.linspace(-90, 90, lat))
     loss = loss_fn(dummy, targets)
     print(loss)

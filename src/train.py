@@ -30,7 +30,7 @@ test_dataloader = get_dataloaders('test', config)
 
 model = scenarIALightningModule(config)
 
-logger = TensorBoardLogger(save_dir=config['train']['runs_dir'], name='lightning_logs')
+logger = TensorBoardLogger(save_dir=RUNS_DIR / config['train']['runs_dir'], name='lightning_logs')
 
 checkpoint_callback = ModelCheckpoint(
     monitor="val_loss", 
