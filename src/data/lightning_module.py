@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 from torchmetrics import PearsonCorrCoef, MeanSquaredError, MeanAbsoluteError
 
 from scenarIA.src.models.CNNLSTM import CNNLSTMModel
-from scenarIA.src.utils.losses import NRMSELoss_ClimateBench
+from scenarIA.src.utils.losses import LLweighted_MSELoss_Climax
 from scenarIA.src.utils.settings import RUNS_DIR
 
 
@@ -42,8 +42,7 @@ class scenarIALightningModule(pl.LightningModule):
         self.predict_only_last_timestep = config['data']['predict_only_last_timestep']
         os.makedirs(self.runs_dir, exist_ok=True)
 
-        #self.loss = NRMSELoss_ClimateBench()
-        self.loss = nn.MSELoss()
+        self.loss = LLweighted_MSELoss_Climax()
 
         self.metrics_dict = nn.ModuleDict({
                     "rmse": MeanSquaredError(squared=True),
@@ -83,7 +82,10 @@ class scenarIALightningModule(pl.LightningModule):
 
     def common_step(self, x, y):
         y_hat = self(x)
-        loss = self.loss(y_hat, y)
+        #if y.shape[-1] == 1:
+            #y = y.squeeze(-1)
+            #y_hat = y_hat.squeeze(-1)
+        loss = self.loss(y_hat, y) # if len(var) == 1, squeeze, else : loop on variables
         return y_hat, loss
 
     def training_step(self, batch, batch_idx):
@@ -164,7 +166,7 @@ class scenarIALightningModule(pl.LightningModule):
         df = self.build_metrics_dataframe()
         self.save_test_metrics_as_csv(df)
         df = df.drop("Name", axis=1)
-        self.log('hp_metric', df['rmse'].mean())
+        self.log('hp_metric', df['rmse'].mean()) # TODO : a la place mettre NRMSE qu'on compute à partir de test_step_outputs
         self.log('loss', df['loss'].mean())
 
         spatial_corr = self.spatial_corr_metric.compute()

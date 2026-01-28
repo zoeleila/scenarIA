@@ -18,6 +18,8 @@ from scenarIA.src.utils.transforms import ToTensor, Normalize
 from scenarIA.src.utils.settings import RUNS_DIR, DATASET_DIR
 
 
+# plot dataset ?
+
 class scenarIA(Dataset):
     def __init__(self,
                  transform: Optional[v2.Compose],
@@ -225,7 +227,7 @@ class scenarIA(Dataset):
         if self.transform:
             x, y = self.transform((x, y))
             x.float(), y.float()
-        return x, y, t
+        return x, y, t # TODO : return scenario name
 
 def get_dataloaders(data_type: str, config:dict, transforms:bool=True) -> DataLoader:
     """

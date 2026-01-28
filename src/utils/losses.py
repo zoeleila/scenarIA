@@ -3,6 +3,11 @@ import torch.nn as nn
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
+######################################
+# Losses from ClimateSET
+######################################
+
+
 class RMSELoss(nn.Module):
     def __init__(self, reduction: str = "none", mask=None):
         super().__init__()
@@ -47,7 +52,7 @@ class NRMSELoss_s_ClimateBench(nn.Module):
     def forward(self, pred, y):
         # weighting to account for decreasing grid-cell area towards pole
         # lattitude weights
-        lat_size = y.shape[-3]
+        lat_size = y.shape[-2]
         lats = torch.linspace(-90, 90, lat_size)
         if self.deg2rad:
             weights = torch.cos((torch.pi * lats) / 180)
@@ -67,7 +72,8 @@ class NRMSELoss_s_ClimateBench(nn.Module):
 
     def weighted_global_mean(self, x, weights):
         # weitghs * x summed over lon lat / lon+lat
-
+        x = x.transpose(-1, -2)
+        print(weights)
         return torch.mean(x * weights, dim=(-1, -2))
 
 
@@ -87,11 +93,12 @@ class NRMSELoss_g_ClimateBench(nn.Module):
         # weighting to account for decreasing grid-cell area towards pole
         # lattitude weights
         if self.deg2rad:
-            weights = torch.cos((torch.pi * torch.arange(y.shape[-1])) / 180)
+            weights = torch.cos((torch.pi * torch.arange(y.shape[-2])) / 180)
         else:
-            weights = torch.cos(torch.arange(y.shape[-1]))
+            weights = torch.cos(torch.arange(y.shape[-2]))
 
         weights = weights.to(device)
+        
 
         # nrmseg = sqrt(((x - ( (weights * y_mean_t)_mean_s)**2)_mean_t )  ) / ((weights*y)_mean_s)_mean_t_n
         denom = self.weighted_global_mean(y, weights).mean(dim=(0, 1))
@@ -111,6 +118,8 @@ class NRMSELoss_g_ClimateBench(nn.Module):
 
     def weighted_global_mean(self, x, weights):
         # weitghs * x summed over lon lat / lon+lat
+        x = x.transpose(-1, -2)
+        print(weights)
         return torch.mean(x * weights, dim=(-1, -2))
 
 
@@ -132,3 +141,91 @@ class NRMSELoss_ClimateBench(nn.Module):
         nrmses = self.nrmse_s(pred, y)
         nrmse = nrmses + self.alpha * nrmseg
         return nrmse
+    
+class LLweighted_MSELoss_Climax(nn.Module):
+    """
+    Latitude weighted mean squared error taken from ClimaX.
+    
+    y : [batch, time, lat, lon]
+    pred : [batch, time, lat, lon]
+    weights : [lat, lon]
+
+    returns scalar
+    """
+
+    def __init__(self, deg2rad: bool = True, mask=None):
+        super().__init__()
+
+        self.mse = nn.MSELoss(reduction="none")
+        self.deg2rad = deg2rad
+        self.mask = mask
+
+    def forward(self, pred, y):
+        mse = self.mse(pred, y)
+
+        # lattitude weights
+        if self.deg2rad:
+            weights = torch.cos((torch.pi * torch.arange(y.shape[-2])) / 180)
+        else:
+            weights = torch.cos(torch.arange(y.shape[-2]))
+        weights = weights.unsqueeze(-1)
+
+        # they normalize the weights first
+        weights = weights / weights.mean()
+        weights = weights.to(device)
+        if self.mask is not None:
+            error = (mse * weights * self.mask).sum() / self.mask.sum()
+        else:
+            error = (mse * weights).mean()
+
+        return error
+
+######################################
+# Losses from ClimateBench (Lutjens et al. 2023) adapted to PyTorch
+######################################
+
+class LatWeightedMeanSquaredError(nn.Module):
+    def __init__(self,
+                reduction="sum_over_batch_size",
+                device='cpu'):
+        super().__init__()
+        
+        self.reduction = reduction
+        self.mse = nn.MSELoss(reduction = 'none')
+        self.device = device
+
+    def forward(self, y, y_hat):
+        # I verified that the above code applies weights correctly with the below snippet:
+        # weights_np_repeats = np.repeat(weights_np[None,None,...], repeats=Y_val_all.shape[0], axis=0)
+        # weighted_mse_repeats = mse * weights_np_repeats
+        # assert torch.all(weighted_mse == weighted_mse_repeats)
+        lat_size = y.shape[-2]
+        lats = torch.linspace(-90, 90, lat_size)
+        weights = torch.cos((torch.pi * lats) / 180)
+        weights = weights.expand(lat_size, y.shape[-1])  # expand to lon dimension
+        weights = weights / weights.sum()  # normalize weights
+        weights = weights.to(self.device)
+
+        mse = self.mse(y, y_hat)
+        mse = mse * weights
+        mse = mse.sum(axis=torch.arange(len(mse.shape))[1:].tolist()) # reduce over time, lat, lon ????
+        if self.reduction == "sum_over_batch_size":
+            mse = mse.sum()
+        elif self.reduction == "avg_over_batch_size":
+            mse = mse.mean()
+        return mse
+
+    
+
+if __name__ == "__main__":
+    batch_size = 16
+    out_time = 10
+    lon = 192
+    lat = 96
+    dummy = torch.rand(size=(batch_size, out_time, lat, lon))
+
+    targets = torch.rand(size=(batch_size, 1, lat, lon))
+
+    loss_fn = LLweighted_MSELoss_Climax(deg2rad=True)
+    loss = loss_fn(dummy, targets)
+    print(loss)
