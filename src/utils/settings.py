@@ -8,3 +8,4 @@ SCRATCH_DIR = Path('/scratch/globc/garcia/scenarIA/')
 RAW_DATA_DIR = SCRATCH_DIR / 'rawdata'
 DATASET_DIR = SCRATCH_DIR / 'datasets'
 RUNS_DIR = SCRATCH_DIR / 'runs'
+GRAPHS_DIR = SCRATCH_DIR / 'graphs'

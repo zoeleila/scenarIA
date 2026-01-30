@@ -169,7 +169,6 @@ class LLweighted_MSELoss_Climax(nn.Module):
         weights = compute_weights_from_lats(lats=self.lats, 
                                             deg2rad=self.deg2rad)
 
-        weights = weights / weights.mean()
         weights = weights.to(device)
         if self.mask is not None:
             error = (mse * weights * self.mask).sum() / self.mask.sum()

@@ -64,11 +64,10 @@ def LLweighted_MSE_Climax(
     y_hat: torch.Tensor, y: torch.Tensor, lats: torch.Tensor, mask=None
 ):
     weights = compute_weights_from_lats(lats)
-    weights_norm = weights / weights.mean()
     if mask is not None:
-        error = (((y_hat - y) ** 2) * weights_norm * mask).sum() / mask.sum()
+        error = (((y_hat - y) ** 2) * weights * mask).sum() / mask.sum()
     else:
-        error = (((y_hat - y) ** 2) * weights_norm).mean()
+        error = (((y_hat - y) ** 2) * weights).mean()
 
     return error
 
@@ -77,11 +76,10 @@ def LLweighted_RMSE_Climax(
     y_hat: torch.Tensor, y: torch.Tensor, lats: torch.Tensor, mask=None
 ):
     weights = compute_weights_from_lats(lats)
-    weights_norm = weights / weights.mean()
     if mask is not None:
-        error = (((y_hat - y) ** 2) * weights_norm * mask).sum() / mask.sum()
+        error = (((y_hat - y) ** 2) * weights * mask).sum() / mask.sum()
     else:
-        error = (((y_hat - y) ** 2) * weights_norm).mean()
+        error = (((y_hat - y) ** 2) * weights).mean()
 
     error = torch.sqrt(error)
 
