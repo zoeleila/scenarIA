@@ -1,12 +1,37 @@
 import glob
+from pathlib import Path
 import xarray as xr
-from src.utils.datautils import compute_annual_means, time_format_conversion, dataset_xr_formatting
+from scenarIA.src.utils.datautils import compute_annual_means, dataset_xr_formatting
 
 # TODO : Check data class to create dataset with same time format, unit, lat (-90,90), lon (0, 360)
 # class input and output ?
 
+class Outputs:
+    def __init__(self,
+                 files_dict,
+                 dataset_path):
+        self.files_dict = files_dict
+        self.dataset_path = Path(dataset_path)
 
+        # on suppose que les données sont déjà concatenées de dimension (time, lat, lon, member) ... avec toutes les varibales dedans,
+        # il peut y avoir différents fichiers si il y a un membre différent de membre par simus, exemple CNRM-CM6-1
 
+    def build_dataset(self, original_time_format="%Y"):
+        for simu, files in self.files_dict.items():
+            if isinstance(files, str) or isinstance(files, Path):
+                ds = xr.open_dataset(files, chunks= {'time': 10})
+                ds = dataset_xr_formatting(ds, original_time_format)
+                ds.to_netcdf(self.dataset_path / f'outputs_{simu}.nc')
+            else:
+                for file in files:
+                    ds = xr.open_dataset(file, chunks= {'time': 10})
+                    ds = dataset_xr_formatting(ds, original_time_format)
+                    start = ds.time.dt.year.values[0]
+                    end = ds.time.dt.year.values[-1]
+                    ds.to_netcdf(self.dataset_path / f'outputs_{simu}_{start}-{end}.nc')
+                
+
+    # TODO : static fonction for var concatenation ? member concatenation, reggrid ?? not the same nb of member per simus
 
 
 def mpi_esm1_2_lr_annual_outputs_formatting(ds):
@@ -33,9 +58,11 @@ def mpi_esm1_2_lr_annual_inputs_formatting(ds):
     return ds
 
 if __name__ == "__main__":
-    DATASET_PATH = '/scratch/globc/garcia/scenarIA/datasets/MPI-ESM1-2-LR/annual/'
-    files = glob.glob(DATASET_PATH + 'outputs*.nc')
-    for file in files:
-        ds = xr.open_dataset(file)
-        ds = mpi_esm1_2_lr_annual_outputs_formatting(ds)
-        #ds.to_netcdf(file.replace('.nc', '_2.nc'))
+    DATASET_PATH = Path('/scratch/globc/garcia/scenarIA/datasets/MPI-ESM1-2-LR/annual/')
+    simus = ['historical', 'ssp119', 'ssp245', 'piControl', 'ssp126', 'ssp370', 'ssp585']
+    #simus = ['historical', 'ssp119', 'ssp245']
+    files_dict = {}
+    for simu in simus:
+        files_dict[simu] = DATASET_PATH / f'outputs_{simu}.nc'
+    builder = Outputs(files_dict, Path('/scratch/globc/garcia/scenarIA/datasets/MPI-ESM1-2-LR/annual2/'))
+    builder.build_dataset()

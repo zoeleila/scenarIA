@@ -84,6 +84,7 @@ def standardize_dim_order(ds, priority_dims = ['time', 'lat', 'lon', 'member']):
 def standardize_time(ds, original_time_format="%Y"):
     return ds.assign_coords(time=pd.to_datetime(ds.time.values, format=original_time_format))
 
+
 def standardize_units(ds):
 
     for var in ds.data_vars:
@@ -139,45 +140,7 @@ def compute_annual_means(ds, resample_time='Y'):
         ds = ds.groupby('time.year').mean('time')
     return ds
 
-def time_format_conversion(ds, time_format="datetime64[ns]"):
-    # Ensure the time coordinate is in the desired format
-    ds["time"] = ds["time"].astype(time_format)
 
-    #ds = ds.assign_coords(
-                #time=pd.to_datetime(ds.time.values, format="%Y")
-            #)
-    return ds
-
-def dataset_xr_formatting2(ds, 
-                        resample_time=None, 
-                        time_format=None,
-                        dim_to_add_dict=None):
-
-    ds = ds.load()
-    
-    if resample_time:
-        ds = compute_annual_means(ds, resample_time=resample_time)
-    if time_format:
-        ds = time_format_conversion(ds, time_format=time_format)
-    if dim_to_add_dict:
-        try:
-            ds = ds.expand_dims(dim_to_add_dict)
-        except:
-            pass
-    try:
-        ds = ds.drop_vars(['lat_bnds', 'lon_bnds'])
-    except:
-        pass
-    try:
-        data = data.drop_vars(['height'])
-    except:
-        pass
-    try:
-        ds = ds.rename({'longitude':'lon', 'latitude': 'lat'})
-    except:
-        pass
-    
-    return ds
 
 def compute_weights_from_lats(lats, deg2rad=True):
     if isinstance(lats, np.ndarray):
@@ -211,7 +174,7 @@ def weighted_global_mean(data, lats=None, deg2rad=True):
         weights = compute_weights_from_lats(lats, deg2rad=deg2rad)
         data = torch.mean(data * weights, dim=(-2, -1))
 
-    elif isinstance(data, xr.Dataset):
+    elif isinstance(data, xr.Dataset) or isinstance(data, xr.DataArray):
         data = standardize_dims_and_coords(data)
         weights = compute_weights_from_lats(data.lat)
         data = data.weighted(weights).mean(['lat', 'lon'])

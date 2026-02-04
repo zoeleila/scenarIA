@@ -47,6 +47,7 @@ class scenarIALightningModule(pl.LightningModule):
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.lats = torch.linspace(-90, 90, self.img_size[0]).to(device)
         self.loss = LLweighted_MSELoss_Climax(lats=self.lats)
+        #self.loss = nn.MSELoss()
         self.metrics_dict = nn.ModuleDict({
                     "rmse": MeanSquaredError(squared=True),
                     "mae": MeanAbsoluteError()

@@ -37,16 +37,18 @@ class DeNormlize:
     
 class DiffClimatology: # a modifier
     """Subtract climatology from tensor sample."""
-    def __init__(self, climatology: Tensor):
+    def __init__(self, climatology=None):
         # climatology: Tensor of shape (lat, lon, channels)
-        self.climatology = climatology
+        self.climatology = torch.tensor(climatology).squeeze() # TODO change for multivariate
 
     def __call__(self, sample: tuple[Tensor, Tensor]) -> tuple[Tensor, Tensor]:
         # y shape: (time, lat, lon, channels)
         x, y = sample
-        assert y.shape[1:] == self.climatology.shape, "Climatology shape does not match y shape."
-        y = y - self.climatology[np.newaxis, ...]
-        return x, y
+        if self.climatology is None:
+            return x, y
+        else:
+            y = y - self.climatology
+            return x, y
     
 
 # padding

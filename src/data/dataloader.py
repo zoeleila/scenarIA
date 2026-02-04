@@ -1,24 +1,22 @@
 from logging import config
-from statistics import mean
 from torch.utils.data import Dataset, DataLoader
 from torchvision.transforms import v2
 import numpy as np
 from typing import Optional
-import torch
 from torch import Tensor
+import torch
 import yaml
-from tqdm import tqdm
-from pathlib import Path
+import pandas as pd
 import xarray as xr
 import json
 import os
+from pathlib import Path
 import copy
 
-from scenarIA.src.utils.transforms import ToTensor, Normalize
-from scenarIA.src.utils.settings import RUNS_DIR, DATASET_DIR
+from scenarIA.src.utils.transforms import ToTensor, Normalize, DiffClimatology
+from scenarIA.src.utils.settings import RUNS_DIR, DATASET_DIR, CONFIG_DIR, GRAPHS_DIR
+from scenarIA.src.utils.plotutils import plot_hist, plot_multi_samples
 from scenarIA.src.utils.datautils import weighted_global_mean
-
-
 # plot dataset ?
 
 class scenarIA(Dataset):
@@ -60,7 +58,7 @@ class scenarIA(Dataset):
 
         # annual mean
         # pi control
-
+        print(self.inputs.shape)
         if data_type == 'train' or data_type == 'val':
             rng = np.random.default_rng(self.seed)
             perm = rng.permutation(self.inputs.shape[0])
@@ -71,9 +69,11 @@ class scenarIA(Dataset):
         if self.data_type == 'train':
             self.inputs = self.inputs[:split_index]
             self.outputs = self.outputs[:split_index]
+            self.time = self.time[:split_index]
         elif self.data_type == 'val': 
             self.inputs = self.inputs[split_index:]
             self.outputs = self.outputs[split_index:]
+            self.time = self.time[split_index:]
         
         print('final inputs shape shuffle', self.inputs.shape)
         print('final outputs shape shuffle', self.outputs.shape)
@@ -224,11 +224,22 @@ class scenarIA(Dataset):
         """
         x = self.inputs[idx, ...]
         y = self.outputs[idx, ...]
-        t = self.time[idx]
+        t64 = self.time[idx]
+        t = torch.tensor([pd.to_datetime(t64).year,
+                                      pd.to_datetime(t64).month])
+
         if self.transform:
             x, y = self.transform((x, y))
             x.float(), y.float()
-        return x, y, t # TODO : return scenario name
+        return x, y, t # TODO : return scenario name !!!!!!!!!!
+
+def get_climatology(config, climatology_simu: str='piControl', period=['1850-01-01', '2250-12-31']):
+    dataset_path = DATASET_DIR / config['data']['dataset_path']
+    outputs_var_list = config['train']['outputs']
+    ds = xr.open_dataset(dataset_path / f'outputs_{climatology_simu}.nc')[outputs_var_list].mean('member')
+    ds = ds.sel(time=slice(period[0], period[1])).mean('time')
+    climatology = ds.to_array().transpose('lat', 'lon', 'variable').to_numpy()
+    return climatology
 
 def get_dataloaders(data_type: str, config:dict, transforms:bool=True) -> DataLoader:
     """
@@ -251,8 +262,14 @@ def get_dataloaders(data_type: str, config:dict, transforms:bool=True) -> DataLo
                stats = json.load(f)
         if str(seed) not in stats:
            stats = compute_statistics(copy.deepcopy(config), seeds=seed)
+        
+        piControl_diff = bool(config['data']['piControl_diff'])
+        print(piControl_diff)
+        climatology = get_climatology(config) if piControl_diff else None
+        print(climatology.shape)
         transforms = v2.Compose([ToTensor(),
-                                 Normalize(stats = stats[str(seed)])])
+                                 Normalize(stats = stats[str(seed)]),
+                                 DiffClimatology(climatology=climatology)])
     else:
         transforms = v2.Compose([ToTensor()])
     
@@ -270,6 +287,7 @@ def get_dataloaders(data_type: str, config:dict, transforms:bool=True) -> DataLo
                             shuffle=False,
                             num_workers=1)
     return dataloader
+
 
 
 def compute_statistics(config, seeds: int = 42):
@@ -311,21 +329,58 @@ def compute_statistics(config, seeds: int = 42):
 
     return stats
 
+def plot_dataset_histograms(dataset, title=None, config_plots=None, save_dir=None):
+    # TODO à mettre dans compute statistics ???
+    # TODO ATTENTION ne pas compter le temps plusieurs fois
+    all_data = {'inputs': {'data' : dataset.inputs,
+                           'vars' : dataset.inputs_var_list},
+                'outputs' : {'data': dataset.outputs,
+                             'vars': dataset.outputs_var_list}}
+    for dict in all_data.values():
+        for i, var in enumerate(dict['vars']):
+            unit, color = None, None
+            if config_plots:
+                unit = config_plots[var]['unit']
+                color = config_plots[var]['color']
+            data = dict['data'][..., i]
+            data = weighted_global_mean(data, lats=np.linspace(-90,90, data.shape[-2])).flatten()
+            plot_hist(data, 
+                    label=f'{var} {unit}', 
+                    title=title, 
+                    save_dir=save_dir / f'histogram_{dataset.seed}_{dataset.data_type}_{var}', 
+                    color=color)
 
-if __name__ == "__main__":
+def plot_batchs(dataset, var_name, save_path, config_plots=None):
+    if var_name in dataset.inputs_var_list:
+        data = dataset.inputs
+        i = dataset.inputs_var_list.index(var_name)
+        data = data[..., i]
+    else:
+        data = dataset.outputs # TODO : multivariate
+    time = dataset.time
+    labels = np.array(pd.DatetimeIndex(time).year)
 
-    import matplotlib.pyplot as plt
-    config_path = Path('/gpfs-calypso/home/globc/garcia/scenarIA/configs/config.yaml')
-    with open(config_path, 'r') as file:
-        config = yaml.safe_load(file)
-
-    dataset = scenarIA(config=config, transform=v2.Compose([ToTensor()]), data_type='test')
-    outputs = dataset.outputs
-    outputs = outputs.reshape(-1, outputs.shape[-2], outputs.shape[-1])
-
-    plt.figure()
-    plt.plot(weighted_global_mean(outputs, lats= np.linspace(-90, 90, outputs.shape[-2])), label='True')
-    plt.plot(np.mean(outputs, axis=(1,2)), label='no weight')
-    plt.legend()
-    plt.savefig('utils/test1')
+    data = np.squeeze(data)
+    plot_multi_samples(data, 
+                       n_rows=3, 
+                       n_cols=4,
+                       labels=labels,
+                       title=None,
+                       unit=config_plots[var_name]['unit'] if config_plots else '',
+                       cmap=config_plots[var_name]['cmap']['values'] if config_plots else 'OrRd',
+                       var_name=var_name,
+                       save_path=save_path)
     
+        
+
+if __name__=='__main__':
+    with open(CONFIG_DIR / 'config.yaml') as file:
+        config = yaml.safe_load(file)
+    with open(CONFIG_DIR / 'plots.yaml') as file:
+        config_plots = yaml.safe_load(file)
+    seed = 44
+    config['train']['seed'] = seed
+    dataset = scenarIA(transform=False, config=config, data_type = 'test')
+    runs_dir = RUNS_DIR/ config['train']['runs_dir']
+    plot_dataset_histograms(dataset, save_dir=runs_dir.parent, config_plots=config_plots,
+                            title=f'exp1 test 50 mb mean')
