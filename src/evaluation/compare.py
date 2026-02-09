@@ -71,7 +71,7 @@ for test, y_hat in y_hat_dict.items():
     y_hat_mean = weighted_global_mean(y_hat_mean, lats=lats)
     y_hat_std = weighted_global_mean(y_hat_std, lats=lats)
     print(y_hat_mean.shape, y_hat_std.shape)
-
+    # TODO : pas la meme seq length donc pas la meme shape ... il faut un cut
     plt.plot(y_hat_mean, label=test)
     print(time.shape, y_hat_mean.shape, y_hat_std.shape)
     plt.fill_between(time, y_hat_mean - y_hat_std, y_hat_mean + y_hat_std, alpha=0.2)
