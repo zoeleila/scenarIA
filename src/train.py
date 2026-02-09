@@ -8,7 +8,7 @@ import pytorch_lightning as pl
 
 from scenarIA.src.data.dataloader import get_dataloaders
 from scenarIA.src.data.lightning_module import scenarIALightningModule
-from scenarIA.src.utils.utils import save_infos_from_config
+from scenarIA.src.utils.utils import save_infos_from_config, test_name_from_config
 from scenarIA.src.utils.settings import CONFIG_DIR, RUNS_DIR
 
 torch.cuda.is_available()
@@ -17,6 +17,9 @@ with open(CONFIG_DIR / 'config.yaml') as file:
     config = yaml.safe_load(file)
 
 save_infos_from_config(config)
+test_name = test_name_from_config(config)
+config['train']['test_name'] = test_name
+config['train']['runs_dir'] = config['train']['runs_dir'] + test_name
 
 seed = config['train'].get('seed', 42)
 random.seed(seed)

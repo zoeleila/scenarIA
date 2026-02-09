@@ -8,6 +8,7 @@ sys.path.append('.')
 from pathlib import Path
 import os
 import time
+import yaml
 import torch
 import torch.nn as nn
 import numpy as np
@@ -20,7 +21,8 @@ from scenarIA.src.models.CNNLSTM import CNNLSTMModel
 from scenarIA.src.utils.losses import LLweighted_MSELoss_Climax
 from scenarIA.src.utils.metrics import NRMSE_ClimateBench
 from scenarIA.src.utils.datautils import weighted_global_mean
-from scenarIA.src.utils.settings import RUNS_DIR
+from scenarIA.src.utils.settings import RUNS_DIR, CONFIG_DIR
+from scenarIA.src.utils.plotutils import EvaluationPlots
 
 
 layout = {
@@ -64,6 +66,10 @@ class scenarIALightningModule(pl.LightningModule):
         
         self.save_hyperparameters()
         self.epoch_start_time = None
+
+        with open(CONFIG_DIR / 'plots.yaml') as file:
+            config_plots = yaml.safe_load(file)
+        self.config_plots = config_plots
 
     def get_model(self):
         if self.predict_only_last_timestep:
@@ -134,9 +140,7 @@ class scenarIALightningModule(pl.LightningModule):
         self.test_metrics[batch_idx] = batch_dict
 
         y_flat = y.mean(dim=1).flatten() # [batch, lat, lon]
-        print('y_flat', y_flat.shape)
         y_hat_flat = y_hat.mean(dim=1).flatten()
-        print('y_hat_flat', y_hat_flat.shape)
         self.spatial_corr_metric.update(y_hat_flat, y_flat)
 
         self.test_step_outputs_true.append(y)
@@ -177,10 +181,7 @@ class scenarIALightningModule(pl.LightningModule):
 
         y_all = torch.stack(self.test_step_outputs_true, axis=0).view(-1, self.img_size[0], self.img_size[1])
         y_hat_all = torch.stack(self.test_step_outputs_hat, axis=0).view(-1, self.img_size[0], self.img_size[1])
-        t_all = torch.cat(self.test_step_times)
-        print('jbdjefjdfjh')
-        print(weighted_global_mean(y_all, self.lats).cpu().numpy())
-        print(weighted_global_mean(y_hat_all, self.lats).cpu().numpy())
+        t_all = torch.cat(self.test_step_times).cpu().numpy()
 
         self.log('hp_metric', NRMSE_ClimateBench(y_hat_all, y_all, self.lats))
         self.log('loss', df['loss'].mean())
@@ -188,17 +189,26 @@ class scenarIALightningModule(pl.LightningModule):
         spatial_corr = self.spatial_corr_metric.compute()
         self.log("hp_metric_corr", spatial_corr)
         
-        # TODO external function func(y, y_hat, time, var info) return fig
         fig, ax = plt.subplots()
         ax.plot(weighted_global_mean(y_all, self.lats).cpu().numpy(), label='True')
         ax.plot(weighted_global_mean(y_hat_all, self.lats).cpu().numpy(), label='Predicted')
-        ax.set_xlabel('year') # TODO change according to time features
+        ax.set_xlabel('time') # TODO change according to time features !! monthly
         ax.set_ylabel(f'{self.outputs} value')
         ax.legend()
         self.logger.experiment.add_figure('Figure/test_true_vs_predicted', fig)
 
+        
+        eval = EvaluationPlots(simulation_name='ssp245',# TODO change by returning simu in dataloader get item
+                               var_name=self.outputs[0], # TODO change for multivariate
+                               config_plots=self.config_plots)
+        start_year = t_all[0, 0]
+        end_year = t_all[-1, 0]
+        eval.plot_error_maps(y_all.cpu().numpy(), 
+                             y_hat_all.cpu().numpy(), 
+                             title=f'ssp245 {start_year}-{end_year}',
+                             save_path=Path(self.logger.log_dir) / 'error_maps.png')
 
     def configure_optimizers(self):
         optimizer = torch.optim.RMSprop(self.parameters(), lr=self.learning_rate)
-        #scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=self.scheduler_step_size, gamma=self.scheduler_gamma)
-        return optimizer
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=self.scheduler_step_size, gamma=self.scheduler_gamma)
+        return [optimizer], [scheduler]

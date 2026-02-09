@@ -11,6 +11,7 @@ import xarray as xr
 import json
 import os
 from pathlib import Path
+import matplotlib.pyplot as plt
 import copy
 
 from scenarIA.src.utils.transforms import ToTensor, Normalize, DiffClimatology
@@ -47,7 +48,7 @@ class scenarIA(Dataset):
         if isinstance(self.simus, str):
             self.simus = [self.simus]
 
-        if data_type == 'test' or data_type == 'inference':
+        if data_type == 'test' or data_type == 'inference': # TODO concat historical
             self.one_to_many = False
 
         self.load_inputs()
@@ -58,7 +59,7 @@ class scenarIA(Dataset):
 
         # annual mean
         # pi control
-        print(self.inputs.shape)
+
         if data_type == 'train' or data_type == 'val':
             rng = np.random.default_rng(self.seed)
             perm = rng.permutation(self.inputs.shape[0])
@@ -156,6 +157,7 @@ class scenarIA(Dataset):
                                  ) -> xr.Dataset:
         np.random.seed(seed)
         members = np.random.choice(ds.member.values, size=nb_member_per_subsets, replace=True)
+        print('members id', members)
         if mean:
             return ds.sel(member=members).mean('member')
         return ds.sel(member=members)
@@ -264,9 +266,7 @@ def get_dataloaders(data_type: str, config:dict, transforms:bool=True) -> DataLo
            stats = compute_statistics(copy.deepcopy(config), seeds=seed)
         
         piControl_diff = bool(config['data']['piControl_diff'])
-        print(piControl_diff)
         climatology = get_climatology(config) if piControl_diff else None
-        print(climatology.shape)
         transforms = v2.Compose([ToTensor(),
                                  Normalize(stats = stats[str(seed)]),
                                  DiffClimatology(climatology=climatology)])
@@ -376,11 +376,16 @@ def plot_batchs(dataset, var_name, save_path, config_plots=None):
 if __name__=='__main__':
     with open(CONFIG_DIR / 'config.yaml') as file:
         config = yaml.safe_load(file)
-    with open(CONFIG_DIR / 'plots.yaml') as file:
-        config_plots = yaml.safe_load(file)
-    seed = 44
-    config['train']['seed'] = seed
-    dataset = scenarIA(transform=False, config=config, data_type = 'test')
-    runs_dir = RUNS_DIR/ config['train']['runs_dir']
-    plot_dataset_histograms(dataset, save_dir=runs_dir.parent, config_plots=config_plots,
-                            title=f'exp1 test 50 mb mean')
+    
+    nb_sub_lst = [1, 3, 5]
+    nb_mb_lst = [30, 15, 5]
+    seed_lst = [42, 43]
+    for nb_sub in nb_sub_lst:
+        for nb_mb in nb_mb_lst:
+            for seed in seed_lst:
+                print(nb_sub, nb_mb, seed)
+                config['data']['nb_subsets'] = nb_sub
+                config['data']['nb_member_per_subsets'] = nb_mb
+                config['data']['seed_subsets'] = seed
+                dataset = scenarIA(transform=False, config=config, data_type = 'train')
+

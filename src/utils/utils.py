@@ -20,3 +20,11 @@ def save_infos_from_config(config: dict) -> dict:
     with open(exp_infos, 'w') as file:
         yaml.dump(infos, file)
 
+def test_name_from_config(config:dict) -> str:
+    arch = config['train']['arch']
+    seed = config['train']['seed']
+    seq_length = config['data']['seq_length']
+    nb_member_per_subsets = config['data']['nb_member_per_subsets']
+    nb_subsets = config['data']['nb_subsets'] if bool(config['data']['one_to_many']) else 1
+    test_name = f'{arch}_seed{seed}_seq{seq_length}_mem{nb_member_per_subsets}_sub{nb_subsets}'
+    return test_name
