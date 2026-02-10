@@ -59,7 +59,7 @@ def mpi_esm1_2_lr_annual_inputs_formatting(ds):
 
 if __name__ == "__main__":
     DATASET_PATH = Path('/scratch/globc/garcia/scenarIA/datasets/MPI-ESM1-2-LR/annual/')
-    simus = ['historical', 'ssp119', 'ssp245', 'piControl', 'ssp126', 'ssp370', 'ssp585']
+    simus = ['piControl']
     #simus = ['historical', 'ssp119', 'ssp245']
     files_dict = {}
     for simu in simus:

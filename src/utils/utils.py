@@ -1,7 +1,7 @@
 from pathlib import Path
 import yaml
 
-from scenarIA.src.utils.settings import RUNS_DIR
+from scenarIA.src.utils.settings import RUNS_DIR, CONFIG_DIR
 
 def save_infos_from_config(config: dict) -> dict:
     runs_dir = RUNS_DIR / config['train']['runs_dir']
@@ -21,10 +21,18 @@ def save_infos_from_config(config: dict) -> dict:
         yaml.dump(infos, file)
 
 def test_name_from_config(config:dict) -> str:
+    outputs = config['train']['outputs']
+    outputs_str = "_".join(outputs)
     arch = config['train']['arch']
     seed = config['train']['seed']
     seq_length = config['data']['seq_length']
     nb_member_per_subsets = config['data']['nb_member_per_subsets']
     nb_subsets = config['data']['nb_subsets'] if bool(config['data']['one_to_many']) else 1
-    test_name = f'{arch}_seed{seed}_seq{seq_length}_mem{nb_member_per_subsets}_sub{nb_subsets}'
+    test_name = f'{outputs_str}_{arch}_seed{seed}_seq{seq_length}_mem{nb_member_per_subsets}_sub{nb_subsets}'
     return test_name
+
+if __name__=='__main__':
+    with open(CONFIG_DIR / 'config.yaml') as file:
+        config = yaml.safe_load(file)
+    test_name = test_name_from_config(config)
+    print(test_name)

@@ -1,4 +1,6 @@
 from logging import config
+from pkgutil import get_data
+from webbrowser import get
 from torch.utils.data import Dataset, DataLoader
 from torchvision.transforms import v2
 import numpy as np
@@ -91,6 +93,10 @@ class scenarIA(Dataset):
 
         for simu in self.simus:
             inputs_xr = xr.open_dataset(self.dataset_path / f'inputs_{simu}.nc')[self.inputs_var_list]
+            if self.data_type == 'test' and self.seq_length > 1:
+                hist_xr = xr.open_dataset(
+                    self.dataset_path / f'inputs_historical.nc')[self.inputs_var_list]
+                inputs_xr = xr.concat([hist_xr.isel(time=slice(-self.seq_length+1, None)), inputs_xr], dim='time')
 
             for _ in range(self.nb_subsets if self.one_to_many else 1):
                 inputs, _ = scenarIA.build_sequence_array_from_xr(
@@ -134,6 +140,10 @@ class scenarIA(Dataset):
                         self.nb_member_per_subsets,
                         mean=True
                     )
+                if self.data_type == 'test' and self.seq_length > 1:
+                    hist_xr = xr.open_dataset(
+                        self.dataset_path / f'outputs_historical.nc')[self.outputs_var_list].mean('member')
+                    outputs_xr = xr.concat([hist_xr.isel(time=slice(-self.seq_length+1, None)), outputs_xr], dim='time')
 
                 outputs, time = scenarIA.build_sequence_array_from_xr(
                     outputs_xr,
@@ -228,7 +238,8 @@ class scenarIA(Dataset):
         y = self.outputs[idx, ...]
         t64 = self.time[idx]
         t = torch.tensor([pd.to_datetime(t64).year,
-                                      pd.to_datetime(t64).month])
+                            pd.to_datetime(t64).month,
+                            pd.to_datetime(t64).day])
 
         if self.transform:
             x, y = self.transform((x, y))
@@ -266,7 +277,11 @@ def get_dataloaders(data_type: str, config:dict, transforms:bool=True) -> DataLo
            stats = compute_statistics(copy.deepcopy(config), seeds=seed)
         
         piControl_diff = bool(config['data']['piControl_diff'])
-        climatology = get_climatology(config) if piControl_diff else None
+        if piControl_diff:
+            climatology = get_climatology(config)
+            climatology = torch.tensor(climatology, dtype=torch.float32).squeeze()
+        else:
+            climatology = None
         transforms = v2.Compose([ToTensor(),
                                  Normalize(stats = stats[str(seed)]),
                                  DiffClimatology(climatology=climatology)])
@@ -377,15 +392,12 @@ if __name__=='__main__':
     with open(CONFIG_DIR / 'config.yaml') as file:
         config = yaml.safe_load(file)
     
-    nb_sub_lst = [1, 3, 5]
-    nb_mb_lst = [30, 15, 5]
-    seed_lst = [42, 43]
-    for nb_sub in nb_sub_lst:
-        for nb_mb in nb_mb_lst:
-            for seed in seed_lst:
-                print(nb_sub, nb_mb, seed)
-                config['data']['nb_subsets'] = nb_sub
-                config['data']['nb_member_per_subsets'] = nb_mb
-                config['data']['seed_subsets'] = seed
-                dataset = scenarIA(transform=False, config=config, data_type = 'train')
+    dataloader = get_dataloaders(config=config, data_type='test')
+    for i, batch in enumerate(dataloader):
+        if i in [0, 1, 2]:
+            x, y, t = batch
+            fig, ax = plt.subplots()
+            im = ax.imshow(y[0,0,:,:])
+            plt.colorbar(im, ax=ax, pad=0.05)
+            plt.savefig(GRAPHS_DIR/f'tests/test{i}')
 

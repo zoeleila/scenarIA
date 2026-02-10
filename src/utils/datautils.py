@@ -104,11 +104,13 @@ def standardize_units(ds):
             if units in ['kg m-2 s-1', 'kg/m2/s']:
                 ds[var] = ds[var] * 86400
                 ds[var].attrs["units"] = "mm/day"
-            elif units is None and np.nanmean(ds[var]) < 0.1 :
+            elif units is None and np.nanmean(ds[var]) < 0.01 :
                 ds[var] = ds[var] * 86400
                 ds[var].attrs["units"] = "mm/day"
             elif units is None and np.nanmean(ds[var]) > 0.1:
                 ds[var].attrs["units"] = "mm/day"
+            elif units == 'mm/day' and np.nanmean(ds[var]) < 0.01:
+                ds[var] = ds[var] * 86400
     return ds
             
 def drops_useless_vars(ds, 

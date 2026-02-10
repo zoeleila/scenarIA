@@ -39,7 +39,8 @@ class DiffClimatology: # a modifier
     """Subtract climatology from tensor sample."""
     def __init__(self, climatology=None):
         # climatology: Tensor of shape (lat, lon, channels)
-        self.climatology = torch.tensor(climatology).squeeze() # TODO change for multivariate
+
+        self.climatology = climatology # TODO change for multivariate
 
     def __call__(self, sample: tuple[Tensor, Tensor]) -> tuple[Tensor, Tensor]:
         # y shape: (time, lat, lon, channels)
