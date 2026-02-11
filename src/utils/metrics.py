@@ -1,3 +1,4 @@
+from locale import normalize
 import torch
 from scenarIA.src.utils.datautils import compute_weights_from_lats, weighted_global_mean
 
@@ -9,7 +10,7 @@ def MSE(y_hat: torch.Tensor, y: torch.Tensor):
 def RMSE(y_hat: torch.Tensor, y: torch.Tensor):
     return torch.mean(torch.sqrt(MSE(y_hat, y)))
 
-def NRMSE_s_ClimateBench(y_hat: torch.Tensor, y: torch.Tensor, lats: torch.Tensor):
+def NRMSE_s_ClimateBench(y_hat: torch.Tensor, y: torch.Tensor, lats: torch.Tensor, normalize=True):
     if y.dim() == 4: # batch, time, lat, lon
         y = y.mean(dim=0)
         y_hat = y_hat.mean(dim=0)
@@ -18,27 +19,29 @@ def NRMSE_s_ClimateBench(y_hat: torch.Tensor, y: torch.Tensor, lats: torch.Tenso
         weighted_global_mean(
             (y_hat.mean(axis=0) - y.mean(axis=0)) ** 2, lats
         )
-    ) / torch.abs(weighted_global_mean(y, lats).mean(axis=0))
+    ) 
+    if normalize:
+        nrmse_s = nrmse_s / torch.abs(weighted_global_mean(y, lats).mean(axis=0))
 
     return nrmse_s
 
 
-def NRMSE_g_ClimateBench(y_hat: torch.Tensor, y: torch.Tensor, lats: torch.Tensor):
+def NRMSE_g_ClimateBench(y_hat: torch.Tensor, y: torch.Tensor, lats: torch.Tensor, normalize=True):
     if y.dim() == 4: # batch, time, lat, lon
         y = y.mean(dim=0)
         y_hat = y_hat.mean(dim=0)
 
     if torch.any(y_hat == 0):
         y_hat[y_hat == 0] += 1e-6
-    nrmse_g = (
-        torch.sqrt(
+    nrmse_g = torch.sqrt(
             ((
                 weighted_global_mean(y_hat, lats)
                 - weighted_global_mean(y, lats)) ** 2
             ).mean(axis=0)
         )
-        / torch.abs(weighted_global_mean(y, lats).mean(axis=0))
-    )
+    if normalize:
+        nrmse_g = nrmse_g / torch.abs(weighted_global_mean(y, lats).mean(axis=0))
+    
     return nrmse_g
 
 
@@ -47,8 +50,8 @@ def NRMSE_ClimateBench(y_hat: torch.Tensor, y: torch.Tensor, lats: torch.Tensor,
         y = y.mean(dim=0)
         y_hat = y_hat.mean(dim=0)
 
-    nrmseg = NRMSE_g_ClimateBench(y_hat, y, lats)
-    nrmses = NRMSE_s_ClimateBench(y_hat, y, lats)
+    nrmseg = NRMSE_g_ClimateBench(y_hat, y, lats, normalize=True)
+    nrmses = NRMSE_s_ClimateBench(y_hat, y, lats, normalize=True)
     nrmse = nrmses + alpha * nrmseg
 
     return nrmse

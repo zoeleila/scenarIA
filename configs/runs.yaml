@@ -26,6 +26,3 @@ compare:
       - MPI-ESM1-2-LR/annual/exp1/cnn-lstm_seed43_seq10_mem50_sub1/lightning_logs/version_0
       - MPI-ESM1-2-LR/annual/exp1/cnn-lstm_seed44_seq10_mem50_sub1/lightning_logs/version_0
       - MPI-ESM1-2-LR/annual/exp1/tas_cnn-lstm_seed45_seq10_mem50_sub1/lightning_logs/version_0
-
-
-

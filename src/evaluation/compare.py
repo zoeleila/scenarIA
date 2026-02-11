@@ -103,10 +103,12 @@ def compare_metrics(y, y_hat_dict, var_name, config_plots=None, title=None, save
                                                         torch.tensor(lats))
         metric_dict['srmse'][test] = NRMSE_s_ClimateBench(torch.tensor(y_hat_mean), 
                                                         torch.tensor(y), 
-                                                        torch.tensor(lats))
+                                                        torch.tensor(lats),
+                                                        normalize=False)
         metric_dict['grmse'][test] = NRMSE_g_ClimateBench(torch.tensor(y_hat_mean), 
                                                         torch.tensor(y), 
-                                                        torch.tensor(lats))
+                                                        torch.tensor(lats),
+                                                        normalize = False)
 
     for metric in metric_dict:
         test_names = metric_dict[metric].keys()
