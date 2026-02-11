@@ -13,7 +13,7 @@ from scenarIA.src.utils.settings import CONFIG_DIR, GRAPHS_DIR, RUNS_DIR
 from scenarIA.src.data.dataloader import get_dataloaders
 from scenarIA.src.data.lightning_module import scenarIALightningModule
 from scenarIA.src.utils.datautils import weighted_global_mean
-from scenarIA.src.utils.metrics import NRMSE_ClimateBench
+from scenarIA.src.utils.metrics import NRMSE_ClimateBench, NRMSE_g_ClimateBench, NRMSE_s_ClimateBench
 
 def test(runs_dict):
     # TODO adapt to multi variate ??
@@ -69,17 +69,18 @@ def compare_temporal_profiles(y, y_hat_dict, t, var_name, config_plots=None, tit
     for test, y_hat in y_hat_dict.items():
         if len(y_hat) > 0:
             y_hat = torch.stack(y_hat, dim=0)
+            y_hat = weighted_global_mean(y_hat, lats)
             y_hat_mean = y_hat.mean(axis=0)
             y_hat_std = y_hat.std(axis=0)
         else:
             y_hat_mean = y_hat[0]
+            y_hat_mean = weighted_global_mean(y_hat_mean, lats)
             y_hat_std = torch.zeros_like(y_hat_mean)
 
-        y_hat_mean = weighted_global_mean(y_hat_mean, lats=lats)
-        y_hat_std = weighted_global_mean(y_hat_std, lats=lats)
         line, = plt.plot(t, y_hat_mean, label=test)
         color = line.get_color()
         plt.fill_between(t, y_hat_mean - y_hat_std, y_hat_mean + y_hat_std, color=color, alpha=0.1)
+        
     plt.plot(t, y, label='true', color='k')
     plt.ylim(vmin, vmax)
     plt.xlabel('Time')
@@ -90,19 +91,29 @@ def compare_temporal_profiles(y, y_hat_dict, t, var_name, config_plots=None, tit
 
 def compare_metrics(y, y_hat_dict, var_name, config_plots=None, title=None, save_dir=None):
     lats = np.linspace(-90, 90, y.shape[-2])
-    
-    metric_dict = {'nrmse':{}}
+    y = y[-21:,:,:]
+    metric_dict = {'nrmse':{},
+                   'srmse' : {},
+                   'grmse': {}}
     for test, y_hat in y_hat_dict.items():  
         y_hat = torch.stack(y_hat, dim=0)
-        y_hat_mean = y_hat.mean(axis=0)
+        y_hat_mean = y_hat.mean(axis=0)[-21:,:,:]
         metric_dict['nrmse'][test] = NRMSE_ClimateBench(torch.tensor(y_hat_mean), 
                                                         torch.tensor(y), 
-                                                        torch.tensor(lats)) # TODO : add metrics ?
-        print(f'NRMSE {test} = ', metric_dict['nrmse'][test])
+                                                        torch.tensor(lats))
+        metric_dict['srmse'][test] = NRMSE_s_ClimateBench(torch.tensor(y_hat_mean), 
+                                                        torch.tensor(y), 
+                                                        torch.tensor(lats))
+        metric_dict['grmse'][test] = NRMSE_g_ClimateBench(torch.tensor(y_hat_mean), 
+                                                        torch.tensor(y), 
+                                                        torch.tensor(lats))
 
     for metric in metric_dict:
+        test_names = metric_dict[metric].keys()
+        metric_values = metric_dict[metric].values()
+        print(f'{test_names} = {metric_values}')
         plt.figure(figsize=(8,4))
-        plt.bar(metric_dict[metric].keys(), metric_dict[metric].values())
+        plt.bar(test_names, metric_values)
         plt.grid(axis='y', alpha=0.5)
         plt.title(title)
         plt.ylabel(f'{var_name} {metric}') # TODO add unit if unit
@@ -116,6 +127,6 @@ if __name__=='__main__':
 
     runs_dict = runs['compare']['runs_to_compare']
     y, y_hat_dict, t, infos = test(runs_dict)
-    compare_metrics(y, y_hat_dict, var_name='tas', 
-                    title='ssp245 (MPI-ESM1-2-LR annual)', 
+    compare_metrics(y, y_hat_dict, 'tas', config_plots=None, 
+                    title='ssp245 2080-2100 (MPI-ESM1-2-LR annual)', 
                     save_dir=GRAPHS_DIR/'runs/MPI-ESM1-2-LR/annual/exp1/')

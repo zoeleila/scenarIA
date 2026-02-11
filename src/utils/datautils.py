@@ -162,7 +162,7 @@ def compute_weights_from_lats(lats, deg2rad=True):
             weights = np.cos(np.deg2rad(lats))
         else:
             weights = np.cos(lats)
-    weights = weights / weights.mean()
+    weights = weights / weights.mean() # attention, NRMSE_ClimateBench pas de normalisation des po
     return weights
 
 def weighted_global_mean(data, lats=None, deg2rad=True):

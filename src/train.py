@@ -27,7 +27,7 @@ c4 = {'seq_length': 10,
 c5 = {'seq_length': 10,
            'nb_member_per_subsets': 50}
 configs = [c1, c2, c3, c4, c5]
-seeds = [42, 43, 44]
+seeds = [45]
 run_dir_default = config['train']['runs_dir']
 
 for cfg in configs:

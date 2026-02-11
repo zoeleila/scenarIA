@@ -392,12 +392,5 @@ if __name__=='__main__':
     with open(CONFIG_DIR / 'config.yaml') as file:
         config = yaml.safe_load(file)
     
-    dataloader = get_dataloaders(config=config, data_type='test')
-    for i, batch in enumerate(dataloader):
-        if i in [0, 1, 2]:
-            x, y, t = batch
-            fig, ax = plt.subplots()
-            im = ax.imshow(y[0,0,:,:])
-            plt.colorbar(im, ax=ax, pad=0.05)
-            plt.savefig(GRAPHS_DIR/f'tests/test{i}')
+    dataset = scenarIA(config=config, data_type='test', transform=False)
 
