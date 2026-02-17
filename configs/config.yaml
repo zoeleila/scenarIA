@@ -23,7 +23,7 @@ train: # for training
   batch_size: 4
   runs_dir: 'MPI-ESM1-2-LR/annual/exp1/' 
   inputs: ['CO2', 'SO2', 'CH4', 'BC']
-  outputs: ['pr']
+  outputs: ['tas']
   simus_train: ['historical', 'ssp126', 'ssp370', 'ssp585']
   simus_test: ['ssp245']
   simus_inference: ['ssp245']

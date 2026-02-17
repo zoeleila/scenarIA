@@ -114,7 +114,9 @@ class EvaluationPlots():
                         title=None,
                         save_path=None,
                         no_limits=False):
-        """Plot spatial maps of error metrics (MAE, RMSE, R2, temporal correlation) between true and predicted values."""
+        """
+        y [time, lat, lon]
+        Plot spatial maps of error metrics (MAE, RMSE, R2, temporal correlation) between true and predicted values."""
         me_map = np.mean(y_pred - y_true, axis=0)
         mae_map = np.mean(np.abs(y_pred - y_true), axis=0)
         rmse_map = np.sqrt(np.mean((y_pred - y_true)**2, axis=0))
@@ -134,7 +136,6 @@ class EvaluationPlots():
                  'temporal_correlation': 'Temporal Correlation'}
         fig, axes = plt.subplots(2, 2, figsize=(8,6), subplot_kw={'projection': ccrs.Robinson() })
         for ax, (metric_name, data) in zip(axes.ravel(), metrics.items()):
-            data = np.flip(data, axis=0)  # Flip for correct orientation
             cmap = cmap_dict[metric_name]
             if self.config_plots and no_limits is False:
                 lim = self.config_plots['lim'][metric_name]
@@ -157,6 +158,69 @@ class EvaluationPlots():
                          pad=0.05,
                          aspect=30, 
                          label=f'{self.var_name} {name}' if metric_name=='temporal_correlation' else f'{self.var_name} {name} ({self.unit})')
+            if self.config_plots and no_limits is False:
+                cbar.set_ticks(np.linspace(lim[0], lim[1], 5))
+                cbar.set_ticklabels([str(round(float(i), 1)) for i in np.linspace(lim[0], lim[1], 5)])
+        plt.tight_layout(pad=1.5)
+        fig.suptitle(title)
+        if save_path:
+            plt.savefig(save_path)
+        else:
+            plt.show()
+
+    def plot_diff_maps(self,
+                        y_true,
+                        y_pred_mean,
+                        y_pred_std,
+                        title=None,
+                        save_path=None,
+                        no_limits=False):
+        """Plot spatial maps of true and predicted values (mean + std)."""
+
+        if y_true.ndim == 3:
+            y_true = y_true.mean(axis=0)
+            y_pred_mean = y_pred_mean.mean(axis=0)
+            y_pred_std = y_pred_std.mean(axis=0)
+
+        if self.config_plots:
+            cmap_dict = {'Prediction mean' : self.config_plots['cmap']['values'], 
+                 'True' : self.config_plots['cmap']['values'],
+                 'Prediction std' : self.config_plots['cmap']['std'], 
+                 'Prediction - True': self.config_plots['cmap']['mean_error']}
+            lims = {'Prediction mean' : self.config_plots['lim']['values'], 
+                 'True' : self.config_plots['lim']['values'],
+                 'Prediction std' : [y_pred_std.min(), y_pred_std.max()], 
+                 'Prediction - True': self.config_plots['lim']['mean_error']}
+        values = {'Prediction mean' : y_pred_mean, 
+                 'True' : y_true,
+                 'Prediction std' : y_pred_std, 
+                 'Prediction - True': y_pred_mean - y_true}
+        fig, axes = plt.subplots(2, 2, figsize=(8,6), subplot_kw={'projection': ccrs.Robinson() })
+        for ax, (name, map) in zip(axes.ravel(), values.items()):
+            cmap = cmap_dict[name]
+            if self.config_plots and no_limits is False:
+                lim = lims[name]
+                if lim[0] is not None:
+                    levels = np.linspace(lim[0], lim[1], 11)
+            else: 
+                lim = [None, None]
+                levels=None
+            print(map.shape)
+            cs = ax.contourf(map,
+                     cmap=cmap,
+                     levels=levels,
+                     extent=self.domain,
+                     transform=self.projection
+                    )
+            ax.set_title(name)
+            ax.add_feature(cfeature.COASTLINE, edgecolor='black', linewidth=1, zorder=10)
+            ax.add_feature(cfeature.BORDERS, linestyle='--', linewidth=1, edgecolor='gray', zorder=10)
+            cbar = fig.colorbar(cs, ax=ax, shrink=0.7,
+                         orientation='horizontal',
+                         location='bottom',
+                         pad=0.05,
+                         aspect=30, 
+                         label= f'{self.var_name} ({self.unit})')
             if self.config_plots and no_limits is False:
                 cbar.set_ticks(np.linspace(lim[0], lim[1], 5))
                 cbar.set_ticklabels([str(round(float(i), 1)) for i in np.linspace(lim[0], lim[1], 5)])
@@ -268,12 +332,14 @@ def plot_map_image(var,
     """
 
     if ax is None:
-        fig, ax = plt.subplots(
+        fig, axi = plt.subplots(
             figsize=(6,5),
             subplot_kw={"projection": fig_projection}
         )
+    else:
+        axi=ax
 
-    img = ax.imshow(
+    img = axi.imshow(
         var,
         extent=domain,
         transform=data_projection,
@@ -283,19 +349,20 @@ def plot_map_image(var,
         vmax=vmax
     )
 
-    ax.add_feature(cfeature.COASTLINE, edgecolor='black', linewidth=1, zorder=10, alpha=0.7)
+    axi.add_feature(cfeature.COASTLINE, edgecolor='black', linewidth=1, zorder=10, alpha=0.7)
 
-    if ax:
-        return ax, img
+    if ax is not None:
+        return axi, img
 
-    cbar = plt.colorbar(img, ax=ax, pad=0.05, shrink=0.8)
+    cbar = plt.colorbar(img, ax=axi, pad=0.05, shrink=0.8)
     cbar.set_label(label=var_desc, size=14, labelpad=10)
     cbar.ax.tick_params(labelsize=14)
     plt.tight_layout()
     plt.title(title, fontsize=16, pad=10)
     if save_dir is None:
-        return fig, ax
+        return fig, axi
     else:
+        print('coucou')
         plt.savefig(save_dir)
 
 def plot_multi_samples(data, 
@@ -403,11 +470,12 @@ def plot_multi_samples(data,
         plt.savefig(save_path)
 
 if __name__=='__main__':
-    y = np.random.rand(700, 96, 192)
-    yhat = np.random.rand(700, 96, 192)
+    y = np.random.rand(70, 96, 192)
+    yhat = np.random.rand(70, 96, 192)
+    yhat_std = np.random.rand(70, 96, 192)
     with open(CONFIG_DIR / 'plots.yaml') as file:
         config_plots = yaml.safe_load(file)
     eval = EvaluationPlots(simulation_name='ssp245',
                            var_name='tas',
                            config_plots=config_plots)
-    eval.plot_error_maps(y, yhat, title='ggggg', save_path=GRAPHS_DIR/'tests/test.png')
+    eval.plot_diff_maps(y, yhat, yhat_std, title='ggggg', save_path=GRAPHS_DIR/'tests/test.png')
