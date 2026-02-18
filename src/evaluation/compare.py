@@ -1,25 +1,18 @@
-from logging import config
 import yaml
 import glob
 import torch
-from pathlib import Path
 from tqdm import tqdm
-import matplotlib.pyplot as plt
 import numpy as np
 from datetime import datetime
 import pandas as pd
-import cartopy.crs as ccrs
-import cartopy.feature as cfeature
 
 from scenarIA.src.utils.settings import CONFIG_DIR, GRAPHS_DIR, RUNS_DIR
 from scenarIA.src.data.dataloader import get_dataloaders
 from scenarIA.src.data.lightning_module import scenarIALightningModule
-from scenarIA.src.utils.datautils import weighted_global_mean
-from scenarIA.src.utils.metrics import NRMSE_ClimateBench, NRMSE_g_ClimateBench, NRMSE_s_ClimateBench
-from scenarIA.src.utils.plotutils import EvaluationPlots
-from utils.plotutils import plot_test
+from scenarIA.src.utils.evalutils import EvaluationPlots, compare_rmse_maps
 
-def test(runs_dict, eval_func=None, save_dir=None):
+
+def predict(runs_dict, seeds_mean = False, eval_func=None, plot_save_dir=None):
     # TODO adapt to multi variate ??
     y_all = []
     t_all = []
@@ -55,7 +48,10 @@ def test(runs_dict, eval_func=None, save_dir=None):
                                     np.stack(y_hat_all_seeds, axis=0).mean(axis=0)[-21:,:,:], 
                                     np.stack(y_hat_all_seeds, axis=0).std(axis=0)[-21:,:,:], 
                                     title=f'{test_name}', 
-                                    save_path=save_dir/f'diff_maps_{test_name}.png')
+                                    save_path=plot_save_dir/f'diff_maps_{test_name}.png')
+        if seeds_mean:
+            y_hat_all_seeds = np.stack(y_hat_all_seeds, axis=0)
+            y_hat_all_seeds = y_hat_all_seeds.mean(axis=0)
         y_hat_dict[test_name] = y_hat_all_seeds
 
     y_all = torch.cat(y_all, dim=0).squeeze().numpy()
@@ -66,143 +62,10 @@ def test(runs_dict, eval_func=None, save_dir=None):
              'simus_test': hparams['train']['simus_test']}
     return y_all, y_hat_dict, t_all, infos
 
-# function plot : y [t, lat, lon], y_hat {'test_name' : [[t, lat, lon], ...]}, t [t]
+#def load_xr_to_dict(): TODO
+    #return y, y_hat_dict, t
 
-def compare_temporal_profiles(y, y_hat_dict, t, var_name, config_plots=None, title=None, save_dir=None):
-
-    lats = np.linspace(-90, 90, y.shape[-2])
-    unit = config_plots[var_name]['unit'] if config_plots else ''
-
-    y= weighted_global_mean(y, lats=lats)
-    vmin = y.min()*0.9
-    vmax = y.max()*1.1
-
-    plt.figure(figsize=(6,4))
-    for test, y_hat in y_hat_dict.items():
-        if len(y_hat) > 0:
-            y_hat = np.stack(y_hat, axis=0)
-            y_hat = weighted_global_mean(y_hat, lats)
-            y_hat_mean = y_hat.mean(axis=0)
-            y_hat_std = y_hat.std(axis=0)
-        else:
-            y_hat_mean = y_hat[0]
-            y_hat_mean = weighted_global_mean(y_hat_mean, lats)
-            y_hat_std = np.zeros_like(y_hat_mean)
-
-        line, = plt.plot(t, y_hat_mean, label=test)
-        color = line.get_color()
-        plt.fill_between(t, y_hat_mean - y_hat_std, y_hat_mean + y_hat_std, color=color, alpha=0.1)
-        
-    plt.plot(t, y, label='true', color='k')
-    plt.ylim(vmin, vmax)
-    plt.xlabel('Time')
-    plt.ylabel(f'{var_name} {unit}')
-    plt.legend()
-    plt.title(title)
-    plt.savefig(save_dir)
-
-def compare_metrics(y, y_hat_dict, var_name, config_plots=None, title=None, save_dir=None):
-    lats = np.linspace(-90, 90, y.shape[-2])
-    y = y[-21:,:,:]
-    metric_dict = {'nrmse':{},
-                   'srmse' : {},
-                   'grmse': {}}
-    for test, y_hat in y_hat_dict.items():  
-        y_hat = np.stack(y_hat, axis=0)
-        y_hat_mean = y_hat.mean(axis=0)[-21:,:,:]
-        metric_dict['nrmse'][test] = NRMSE_ClimateBench(torch.tensor(y_hat_mean), 
-                                                        torch.tensor(y), 
-                                                        torch.tensor(lats))
-        metric_dict['srmse'][test] = NRMSE_s_ClimateBench(torch.tensor(y_hat_mean), 
-                                                        torch.tensor(y), 
-                                                        torch.tensor(lats),
-                                                        normalize=False)
-        metric_dict['grmse'][test] = NRMSE_g_ClimateBench(torch.tensor(y_hat_mean), 
-                                                        torch.tensor(y), 
-                                                        torch.tensor(lats),
-                                                        normalize = False)
-        ## add ACC
-
-    for metric in metric_dict:
-        test_names = metric_dict[metric].keys()
-        metric_values = metric_dict[metric].values()
-        print(f'{test_names} = {metric_values}')
-        plt.figure(figsize=(8,4))
-        plt.bar(test_names, metric_values)
-        plt.grid(axis='y', alpha=0.5)
-        plt.title(title)
-        plt.ylabel(f'{var_name} {metric}') # TODO add unit if unit
-        plt.savefig(save_dir / f'{metric}_bar_plot_{var_name}_notnorm.png')
-
-def compare_rmse_maps(y, y_hat_dict, t, var_name, 
-                      periods=[['2015', '2040'],['2041', '2070'], ['2071', '2100']],
-                      save_dir=None):
-    tests = list(y_hat_dict.keys())
-    n_tests = len(tests)
-    n_periods = len(periods)
-
-    for test, y_hat in y_hat_dict.items():
-        if len(y_hat) > 1:
-            y_hat_dict[test] = np.stack(y_hat, axis=0).mean(axis=0)
-        else:
-            y_hat_dict[test] = y_hat[0]
-
-    vmin = 0
-    vmax = None
-
-    #levels = np.linspace(vmin, vmax, 11)
-
-    fig, axes = plt.subplots(n_tests, n_periods,
-                             figsize=(3*n_periods, 2*n_tests),
-                             subplot_kw={'projection': ccrs.Robinson()},
-                             squeeze=False)
-
-    for i, test in enumerate(tests):
-        y_hat = y_hat_dict[test]
-
-        for j, (start, end) in enumerate(periods):
-
-            start_date = np.datetime64(f"{start}-01-01")
-            end_date   = np.datetime64(f"{end}-12-31")
-
-            mask = (t >= start_date) & (t <= end_date)
-            y_p = y[mask]
-            y_hat_p = y_hat[mask]
-
-            rmse_map = np.sqrt(np.mean((y_p - y_hat_p)**2, axis=0))
-
-            ax = axes[i, j]
-            cs = ax.imshow(np.flip(rmse_map,axis=0),
-                   transform=ccrs.PlateCarree(),
-                   cmap="Reds",
-                   #levels=levels,
-                   vmin=vmin,
-                   vmax=vmax,
-                   extent=[0., 360., -90., 90.],
-                   #extend='both'
-                   )
-
-            ax.add_feature(cfeature.COASTLINE, linewidth=0.8, alpha=0.7)
-
-            if i == 0:
-                ax.set_title(f"{start}-{end}", fontsize=11)
-            if j == 0:
-                ax.text(-0.10, 0.5, test,
-                        transform=ax.transAxes,
-                        rotation=90,
-                        va='center',
-                        ha='right',
-                        fontsize=11,
-                        fontweight='bold')
-
-    cbar_ax = fig.add_axes([0.90, 0.2, 0.02, 0.6])
-    cbar = fig.colorbar(cs, cax=cbar_ax)
-    #cbar.set_ticks(np.linspace(vmin, vmax, 5))
-    #cbar.set_ticklabels([str(round(float(i), 1)) for i in np.linspace(vmin, vmax, 5)])
-
-    cbar.set_label(f"RMSE {var_name}")
-    plt.subplots_adjust(hspace=0, wspace=0.05, right=0.88)
-    plt.savefig(save_dir)
+#def get_plot_path ????
 
 
 if __name__=='__main__':
@@ -213,10 +76,12 @@ if __name__=='__main__':
 
     #eval_func = EvaluationPlots(simulation_name='ssp245', var_name='tas', config_plots=config_plots)
     runs_dict = runs['compare']['runs_to_compare']
-    y, y_hat_dict, t, infos = test(runs_dict)
+    y, y_hat_dict, t, infos = predict(runs_dict)
 
+    # do mean before
     compare_rmse_maps(y, y_hat_dict, t, var_name='pr', 
-                      periods=[['2015', '2040'],['2041', '2070'], ['2071', '2100']],
-                      save_dir=GRAPHS_DIR/'runs/MPI-ESM1-2-LR/annual/exp1/rmse_maps_pr_seq_lengthim.png')
+                      periods=[['2020', '2050'], ['2070', '2100']],
+                      title = 'ssp245 (MPI-ESM1-2-LR annual exp1)',
+                      save_dir=GRAPHS_DIR/'runs/MPI-ESM1-2-LR/annual/exp1/rmse_maps_pr_nb_member.png')
 
     

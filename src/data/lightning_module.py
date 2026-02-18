@@ -22,7 +22,7 @@ from scenarIA.src.utils.losses import LLweighted_MSELoss_Climax
 from scenarIA.src.utils.metrics import NRMSE_ClimateBench
 from scenarIA.src.utils.datautils import weighted_global_mean
 from scenarIA.src.utils.settings import RUNS_DIR, CONFIG_DIR
-from scenarIA.src.utils.plotutils import EvaluationPlots
+from scenarIA.src.utils.evalutils import EvaluationPlots
 
 
 layout = {
