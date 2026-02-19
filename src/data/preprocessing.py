@@ -1,5 +1,6 @@
 import glob
 from pathlib import Path
+import xesmf as xe
 import xarray as xr
 from scenarIA.src.utils.datautils import compute_annual_means, dataset_xr_formatting
 
@@ -57,12 +58,27 @@ def mpi_esm1_2_lr_annual_inputs_formatting(ds):
     ds = ds[['CO2', 'SO2', 'CH4', 'BC']]
     return ds
 
+def regrid_inputs_to_outputs(ds, ds_target):
+    regridder = xe.Regridder(ds, ds_target, 'conservative')
+    co2 = ds['CO2']
+    ch4 = ds['CH4']
+    ds = ds.drop_vars(['CO2','CH4'])
+    ds = regridder(ds)
+    ds['CO2'] = co2
+    ds['CH4'] = ch4
+    return ds
+        
+
 if __name__ == "__main__":
     DATASET_PATH = Path('/scratch/globc/garcia/scenarIA/datasets/MPI-ESM1-2-LR/annual/')
-    simus = ['piControl']
-    #simus = ['historical', 'ssp119', 'ssp245']
-    files_dict = {}
-    for simu in simus:
-        files_dict[simu] = DATASET_PATH / f'outputs_{simu}.nc'
-    builder = Outputs(files_dict, Path('/scratch/globc/garcia/scenarIA/datasets/MPI-ESM1-2-LR/annual2/'))
-    builder.build_dataset()
+
+    ds_target = xr.open_dataset('/gpfs-calypso/scratch/globc/garcia/scenarIA/datasets/MPI-ESM1-2-LR/annual/outputs_ssp126.nc')
+    #baseline_pr = baseline_pr.rename({'lon':'longitude', 'lat':'latitude'})
+    exps = ['hist-GHG', 'hist-aer','ssp126', 'ssp245', 'ssp370', 'ssp585', 'historical']
+    print(ds_target.lat)
+    for exp in exps:
+        file = DATASET_PATH / f'inputs_{exp}.nc'
+        ds = xr.open_dataset(file)
+        print(exp)
+        ds = regrid_inputs_to_outputs(ds, ds_target)
+        ds.to_netcdf(DATASET_PATH / f'inputs_{exp}_regrid.nc')

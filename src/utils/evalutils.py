@@ -1,11 +1,14 @@
+from logging import config
 import matplotlib.pyplot as plt
 import numpy as np
 import cartopy.crs as ccrs
+import matplotlib.colors as colors
 import cartopy.feature as cfeature
 import torch
 
 from scenarIA.src.utils.datautils import weighted_global_mean
 from scenarIA.src.utils.metrics import NRMSE_ClimateBench, NRMSE_g_ClimateBench, NRMSE_s_ClimateBench
+import csv
 
 
 class EvaluationPlots():
@@ -27,6 +30,7 @@ class EvaluationPlots():
             self.unit = self.config_plots['unit']
         else:
             self.unit = unit
+        print("evalllll")
 
     def plot_time_series(self, y_true, y_pred, title=None, save_path=None):
         """Plot time series of true vs predicted values."""
@@ -206,11 +210,11 @@ class EvaluationPlots():
                      cmap=cmap,
                      levels=levels,
                      extent=self.domain,
-                     transform=self.projection
+                     transform=self.projection,
+                     extend='both'
                     )
             ax.set_title(name)
-            ax.add_feature(cfeature.COASTLINE, edgecolor='black', linewidth=1, zorder=10)
-            ax.add_feature(cfeature.BORDERS, linestyle='--', linewidth=1, edgecolor='gray', zorder=10)
+            ax.add_feature(cfeature.COASTLINE, linewidth=0.8, alpha=0.7)
             cbar = fig.colorbar(cs, ax=ax, shrink=0.7,
                          orientation='horizontal',
                          location='bottom',
@@ -293,8 +297,9 @@ def compare_metrics(y, y_hat_dict, var_name, config_plots=None, title=None, save
         plt.savefig(save_dir / f'{metric}_bar_plot_{var_name}_notnorm.png')
 
 
-def compare_rmse_maps(y, y_hat_dict, t, var_name, 
+def compare_metric_maps(y, y_hat_dict, t, var_name,
                       periods=[['2020', '2050'],['2070', '2100']],
+                      config_plots=None,
                       title=None,
                       save_dir=None):
     tests = list(y_hat_dict.keys())
@@ -306,60 +311,101 @@ def compare_rmse_maps(y, y_hat_dict, t, var_name,
             y_hat_dict[test] = np.stack(y_hat, axis=0).mean(axis=0)
         else:
             y_hat_dict[test] = y_hat[0]
+    config_plots = config_plots[var_name] if config_plots else None
+    metrics = ['rmse', 'mean_error', 'error']
+    
+    for metric in metrics:
+        cnorm = None
+        if config_plots:          
+            vmin = config_plots['lim'][metric][0]
+            vmax = config_plots['lim'][metric][1]
+            levels = np.linspace(vmin, vmax, 11)
+            cmap = config_plots['cmap'][metric]
+            if cmap == 'coolwarm':
+                levels=np.linspace(vmin, vmax, 8)
+        else:
+            vmin, vmax = None, None
+            levels = None
+            cmap = 'viridis'
 
-    vmin = 0
-    vmax = 0.9
+        fig, axes = plt.subplots(n_periods, n_tests,
+                                figsize=(3*n_tests, 2*n_periods),
+                                subplot_kw={'projection': ccrs.Robinson()},
+                                squeeze=False)
+        plt.suptitle(title)
 
-    levels = np.linspace(vmin, vmax, 11)
+        for i, (start, end) in enumerate(periods):
+            start_date = np.datetime64(f"{start}-01-01")
+            end_date   = np.datetime64(f"{end}-12-31")
+            mask = (t >= start_date) & (t <= end_date)
 
-    fig, axes = plt.subplots(n_periods, n_tests,
-                             figsize=(3*n_tests, 2*n_periods),
-                             subplot_kw={'projection': ccrs.Robinson()},
-                             squeeze=False)
-    plt.suptitle(title)
+            for j, test in enumerate(tests):
+                y_hat = y_hat_dict[test]
+            
+                y_p = y[mask]
+                y_hat_p = y_hat[mask]
 
-    for i, (start, end) in enumerate(periods):
-        start_date = np.datetime64(f"{start}-01-01")
-        end_date   = np.datetime64(f"{end}-12-31")
-        mask = (t >= start_date) & (t <= end_date)
+                index = None
+                if metric == 'rmse':
+                    map = np.sqrt(np.mean((y_p - y_hat_p)**2, axis=0))
+                    if var_name == 'pr':
+                        index = np.where(map > 0.5)
+                    elif var_name == 'tas':
+                        index = np.where(map > 0.6)
+                elif metric == 'mean_error':
+                    map = np.mean((y_hat_p - y_p), axis=0)
+                    if var_name == 'pr':
+                        index = np.where(np.abs(map) > 0.4)
+                    elif var_name == 'tas':
+                        index = np.where(np.abs(map) > 0.5)
+                elif metric == 'error':
+                    map = np.mean(y_hat_p, axis=0) - np.mean(y_p, axis=0)
 
-        for j, test in enumerate(tests):
-            y_hat = y_hat_dict[test]
-           
-            y_p = y[mask]
-            y_hat_p = y_hat[mask]
+                # Write index list to CSV for the last period (i) and last test (j)
+                if (index is not None) and (i == n_periods - 1) and (j == n_tests - 1):
+                    # Prepare path
+                    fname = save_dir / f"{metric}_indices_{var_name}_{start}-{end}.csv"
+                    # Zip indices and write rows
+                    lat_idxs = index[0].tolist()
+                    lon_idxs = index[1].tolist()
+                    with open(str(fname), 'w', newline='') as csvfile:
+                        writer = csv.writer(csvfile)
+                        writer.writerow(['metric', 'lat_idx', 'lon_idx', 'value'])
+                        for r, c in zip(lat_idxs, lon_idxs):
+                            writer.writerow([metric, int(r), int(c), map[int(r), int(c)]])
+                
+                ax = axes[i, j]
+                cs = ax.contourf(map,
+                    transform=ccrs.PlateCarree(),
+                    cmap=cmap,
+                    norm=cnorm,
+                    levels=levels,
+                    vmin=vmin,
+                    vmax=vmax,
+                    extent=[0., 360., -90., 90.],
+                    extend='both'
+                    )
 
-            rmse_map = np.sqrt(np.mean((y_p - y_hat_p)**2, axis=0))
+                ax.add_feature(cfeature.COASTLINE, linewidth=0.8, alpha=0.7)
 
-            ax = axes[i, j]
-            cs = ax.contourf(rmse_map,
-                   transform=ccrs.PlateCarree(),
-                   cmap="Reds",
-                   levels=levels,
-                   vmin=vmin,
-                   vmax=vmax,
-                   extent=[0., 360., -90., 90.],
-                   extend='both'
-                   )
+                if i == 0:
+                    ax.set_title(test, fontsize=11)
+                if j == 0:
+                    ax.text(-0.10, 0.5, f"{start}-{end}",
+                            transform=ax.transAxes,
+                            rotation=90,
+                            va='center',
+                            ha='right',
+                            fontsize=11,
+                            fontweight='bold')
 
-            ax.add_feature(cfeature.COASTLINE, linewidth=0.8, alpha=0.7)
+        cbar_ax = fig.add_axes([0.90, 0.2, 0.02, 0.6])
+        cbar = fig.colorbar(cs, cax=cbar_ax)
+        if levels is not None:
+            cbar.set_ticks(np.linspace(vmin, vmax, 5))
+            cbar.set_ticklabels([str(round(float(i), 1)) for i in np.linspace(vmin, vmax, 5)])
 
-            if i == 0:
-                ax.set_title(test, fontsize=11)
-            if j == 0:
-                ax.text(-0.10, 0.5, f"{start}-{end}",
-                        transform=ax.transAxes,
-                        rotation=90,
-                        va='center',
-                        ha='right',
-                        fontsize=11,
-                        fontweight='bold')
-
-    cbar_ax = fig.add_axes([0.90, 0.2, 0.02, 0.6])
-    cbar = fig.colorbar(cs, cax=cbar_ax)
-    cbar.set_ticks(np.linspace(vmin, vmax, 5))
-    cbar.set_ticklabels([str(round(float(i), 1)) for i in np.linspace(vmin, vmax, 5)])
-
-    cbar.set_label(f"RMSE {var_name}")
-    plt.subplots_adjust(hspace=0, wspace=0.05, right=0.88)
-    plt.savefig(save_dir)
+        cbar.set_label(f"{metric} {var_name}")
+        plt.subplots_adjust(hspace=0, wspace=0.05, right=0.88)
+        tests_str = "_".join(tests)
+        plt.savefig(save_dir / f'{metric}_maps_{var_name}_{tests_str}.png')
