@@ -9,7 +9,7 @@ import pandas as pd
 from scenarIA.src.utils.settings import CONFIG_DIR, GRAPHS_DIR, RUNS_DIR
 from scenarIA.src.data.dataloader import get_dataloaders
 from scenarIA.src.data.lightning_module import scenarIALightningModule
-from scenarIA.src.utils.evalutils import EvaluationPlots, compare_metric_maps
+from scenarIA.src.utils.evalutils import EvaluationPlots, compare_metric_maps, compare_temporal_profiles
 
 
 def predict(runs_dict, seeds_mean = False, eval_func=None, plot_save_dir=None):
@@ -76,10 +76,26 @@ if __name__=='__main__':
     with open(CONFIG_DIR / 'plots.yaml') as file:
         config_plots = yaml.safe_load(file)
 
-    eval_func = EvaluationPlots(simulation_name='ssp245', var_name='pr', config_plots=config_plots)
+    graph_dir = GRAPHS_DIR/f'runs/MPI-ESM1-2-LR/annual/exp1/'
+    #eval_func = EvaluationPlots(simulation_name='ssp245', var_name='pr', config_plots=config_plots)
     runs_dict = runs['compare']['runs_to_compare']
-    y, y_hat_dict, t, infos = predict(runs_dict, eval_func=eval_func,
-                                      plot_save_dir=GRAPHS_DIR/'runs/MPI-ESM1-2-LR/annual/exp1/')
+    y, y_hat_dict, t, infos = predict(runs_dict)
+    idx_points_dict = {'South America': [48, 157],
+           'Central Africa': [52, 10],
+           'East Asia': [65, 61],
+           'Eq Pacific Ocean': [46, 91],
+           'Eq Atlantic Ocean': [50, 171],
+           'Arctic Ocean': [90, 36],
+            'West Europe': [73, 3]}
+
+    for region, point in idx_points_dict.items():
+        region_str = region.replace(' ', '_')
+        compare_temporal_profiles(y, y_hat_dict, t, 
+                                var_name='tas', 
+                                point=point,
+                                config_plots=config_plots, 
+                                title=f'ssp245 (MPI-ESM1-2-LR annual exp1) \n {region}', 
+                                save_dir=graph_dir / f'ssp245_temporal_profile_tas_seq_length_{region_str}.png')
     
 
     

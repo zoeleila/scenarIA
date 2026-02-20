@@ -231,30 +231,39 @@ class EvaluationPlots():
         else:
             plt.show()
     
-def compare_temporal_profiles(y, y_hat_dict, t, var_name, config_plots=None, title=None, save_dir=None):
+def compare_temporal_profiles(y, y_hat_dict, t, var_name, point=None, config_plots=None, title=None, save_dir=None):
 
     lats = np.linspace(-90, 90, y.shape[-2])
     unit = config_plots[var_name]['unit'] if config_plots else ''
 
-    y= weighted_global_mean(y, lats=lats)
-    vmin = y.min()*0.9
-    vmax = y.max()*1.1
+    if point:
+        y = y[..., point[0], point[1]]
+    else:
+        y = weighted_global_mean(y, lats=lats)
+    vmin = y.min()*0.8 if (y.min() > 0) else y.min()*1.2
+    vmax = y.max()*0.8 if (y.max() < 0) else y.max()*1.2
 
     plt.figure(figsize=(6,4))
     for test, y_hat in y_hat_dict.items():
         if len(y_hat) > 1:
             y_hat = np.stack(y_hat, axis=0)
-            y_hat = weighted_global_mean(y_hat, lats)
+            if point:
+                y_hat = y_hat[..., point[0], point[1]]
+            else:
+                y_hat = weighted_global_mean(y_hat, lats)
             y_hat_mean = y_hat.mean(axis=0)
             y_hat_std = y_hat.std(axis=0)
         else:
             y_hat_mean = y_hat[0]
-            y_hat_mean = weighted_global_mean(y_hat_mean, lats)
+            if point:
+                y_hat_mean = y_hat_mean[..., point[0], point[1]]
+            else:
+                y_hat_mean = weighted_global_mean(y_hat_mean, lats)
             y_hat_std = np.zeros_like(y_hat_mean)
 
-        line, = plt.plot(t, y_hat_mean, label=test)
+        line, = plt.plot(t, y_hat_mean, label=f'pred {test}')
         color = line.get_color()
-        plt.fill_between(t, y_hat_mean - y_hat_std, y_hat_mean + y_hat_std, color=color, alpha=0.1)
+        plt.fill_between(t, y_hat_mean - 2*y_hat_std, y_hat_mean + 2*y_hat_std, color=color, alpha=0.1)
         
     plt.plot(t, y, label='true', color='k')
     plt.ylim(vmin, vmax)
