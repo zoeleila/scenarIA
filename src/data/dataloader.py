@@ -1,6 +1,3 @@
-from logging import config
-from pkgutil import get_data
-from webbrowser import get
 from torch.utils.data import Dataset, DataLoader
 from torchvision.transforms import v2
 import numpy as np
@@ -15,6 +12,7 @@ import os
 from pathlib import Path
 import matplotlib.pyplot as plt
 import copy
+
 
 from scenarIA.src.utils.transforms import ToTensor, Normalize, DiffClimatology
 from scenarIA.src.utils.settings import RUNS_DIR, DATASET_DIR, CONFIG_DIR, GRAPHS_DIR
@@ -62,21 +60,26 @@ class scenarIA(Dataset):
         # annual mean
         # pi control
 
+        nb_samples = self.inputs.shape[0]
+        val_seq_length = nb_samples // int(nb_samples * self.val_size)
+        val_idx = np.arange(nb_samples, step=val_seq_length)
+        train_idx = np.setdiff1d(np.arange(nb_samples), val_idx)
+        if self.data_type == 'train':
+            self.inputs = self.inputs[train_idx]
+            self.outputs = self.outputs[train_idx]
+            self.time = [self.time[i] for i in train_idx]
+
+        elif self.data_type == 'val': 
+            self.inputs = self.inputs[val_idx]
+            self.outputs = self.outputs[val_idx]
+            self.time = [self.time[i] for i in val_idx]
+
         if data_type == 'train' or data_type == 'val':
             rng = np.random.default_rng(self.seed)
             perm = rng.permutation(self.inputs.shape[0])
             self.inputs = self.inputs[perm]
             self.outputs = self.outputs[perm]
-            self.time = [self.time[i] for i in perm]
-        split_index = int(self.inputs.shape[0] * (1 - self.val_size))
-        if self.data_type == 'train':
-            self.inputs = self.inputs[:split_index]
-            self.outputs = self.outputs[:split_index]
-            self.time = self.time[:split_index]
-        elif self.data_type == 'val': 
-            self.inputs = self.inputs[split_index:]
-            self.outputs = self.outputs[split_index:]
-            self.time = self.time[split_index:]
+            self.time = [self.time[i] for i in perm]        
         
         print('final inputs shape shuffle', self.inputs.shape)
         print('final outputs shape shuffle', self.outputs.shape)
@@ -92,10 +95,10 @@ class scenarIA(Dataset):
         inputs_all = []
 
         for simu in self.simus:
-            inputs_xr = xr.open_dataset(self.dataset_path / f'inputs_{simu}.nc')[self.inputs_var_list]
+            inputs_xr = xr.open_dataset(self.dataset_path / f'inputs_{simu}_regrid.nc')[self.inputs_var_list]
             if self.data_type == 'test' and self.seq_length > 1:
                 hist_xr = xr.open_dataset(
-                    self.dataset_path / f'inputs_historical.nc')[self.inputs_var_list]
+                    self.dataset_path / f'inputs_historical_regrid.nc')[self.inputs_var_list]
                 inputs_xr = xr.concat([hist_xr.isel(time=slice(-self.seq_length+1, None)), inputs_xr], dim='time')
 
             for _ in range(self.nb_subsets if self.one_to_many else 1):
@@ -121,7 +124,7 @@ class scenarIA(Dataset):
         outputs_all = []
         time_all = []
 
-        for simu in self.simus:
+        for i, simu in enumerate(self.simus):
             outputs_xr_ensemble = xr.open_dataset(self.dataset_path / f'outputs_{simu}.nc')[self.outputs_var_list]
             member_size = outputs_xr_ensemble.member.size
 
@@ -130,13 +133,13 @@ class scenarIA(Dataset):
 
             n_subsets = self.nb_subsets if self.one_to_many else 1
 
-            for i in range(n_subsets):
+            for j in range(n_subsets):
                 if n_subsets == 1 and member_size <= self.nb_member_per_subsets:
                     outputs_xr = outputs_xr_ensemble.mean('member')
                 else:
                     outputs_xr = self.get_random_member_subset(
                         outputs_xr_ensemble,
-                        self.seed_subsets + i, # if n_subsets > 1, different seed for each subset
+                        self.seed_subsets + j, # if n_subsets > 1, different seed for each subset
                         self.nb_member_per_subsets,
                         mean=True
                     )
@@ -157,7 +160,7 @@ class scenarIA(Dataset):
         self.outputs = np.concatenate(outputs_all, axis=0) if len(outputs_all) > 0 else np.array([])
         self.outputs = np.squeeze(self.outputs, axis=-1) # remove for multi variate ???
         self.time = time_all
-    
+
     @staticmethod
     def get_random_member_subset(
                                  ds: xr.Dataset, 
@@ -166,8 +169,7 @@ class scenarIA(Dataset):
                                  mean: bool = True
                                  ) -> xr.Dataset:
         np.random.seed(seed)
-        members = np.random.choice(ds.member.values, size=nb_member_per_subsets, replace=True)
-        print('members id', members)
+        members = np.random.choice(ds.member.values, size=nb_member_per_subsets, replace=False)
         if mean:
             return ds.sel(member=members).mean('member')
         return ds.sel(member=members)
@@ -392,5 +394,6 @@ if __name__=='__main__':
     with open(CONFIG_DIR / 'config.yaml') as file:
         config = yaml.safe_load(file)
     
-    dataset = scenarIA(config=config, data_type='test', transform=False)
-
+    dataset = scenarIA(transform=None,
+                            config=config,
+                            data_type='train')

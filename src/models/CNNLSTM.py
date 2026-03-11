@@ -73,8 +73,8 @@ class CNNLSTMModel(nn.Module):
 # Example usage
 if __name__ == "__main__":
     print('ok')
-    model = CNNLSTMModel(slider=10)
-    
-    x = torch.randn(16, 10, 96, 144, 4)  # (batch, time, height, width, channels)
+    model = CNNLSTMModel(slider=10, width=192, height=96, channels=4, conv_filters=20, conv_kernel=(3, 3), pool_size=2, lstm_units=25, output_seq_len=1)
+
+    x = torch.randn(16, 10, 96, 192, 4)  # (batch, time, height, width, channels)
     y = model(x)
-    print(y.shape)  # Expected: (16, 1, 96, 144)
+    print(y.shape)  # Expected: (16, 1, 96, 192)

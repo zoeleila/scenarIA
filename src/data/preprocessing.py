@@ -70,6 +70,8 @@ def regrid_inputs_to_outputs(ds, ds_target):
         
 
 if __name__ == "__main__":
+    # TODO : add argparse for dataset_path or list path et output ou inputs !!!
+
     DATASET_PATH = Path('/scratch/globc/garcia/scenarIA/datasets/MPI-ESM1-2-LR/annual/')
 
     ds_target = xr.open_dataset('/gpfs-calypso/scratch/globc/garcia/scenarIA/datasets/MPI-ESM1-2-LR/annual/outputs_ssp126.nc')

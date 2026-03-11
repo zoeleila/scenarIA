@@ -250,3 +250,42 @@ def plot_multi_samples(data,
     if save_path:
         plt.savefig(save_path)
 
+def find_index_from_lonlat(points_dict, ds):
+    idx_points_dict = {}
+    for region, coords in points_dict.items():
+        ilon = list(ds.lon.values).index(ds.sel(lon=coords[0], method='nearest').lon)
+        ilat = list(ds.lat.values).index(ds.sel(lat=coords[1], method='nearest').lat)
+        idx_points_dict[region] = [ilon, ilat]
+    return idx_points_dict
+
+def find_lonlat_from_index(idx_points_dict, ds):
+    """
+    Given a dict of indices {region: [ilon, ilat]}, return {region: [lon, lat]}.
+    """
+    points_dict = {}
+    lon_vals = ds.lon.values
+    lat_vals = ds.lat.values
+    for region, idxs in idx_points_dict.items():
+        ilon = int(idxs[0])
+        ilat = int(idxs[1])
+        points_dict[region] = [float(lon_vals[ilon]), float(lat_vals[ilat])]
+    return points_dict
+
+def plot_scatter_map(points_dict, save_dir):
+    if save_dir is not None:
+        fig = plt.figure(figsize=(8,4))
+        ax = fig.add_subplot(1, 1, 1, projection=ccrs.Robinson())
+        ax.coastlines(alpha=0.8)
+        ax.set_global()
+        ax.gridlines(draw_labels=True, alpha = 0.5)
+        for region, coords in points_dict.items():
+            ax.scatter(coords[0], coords[1],
+                       label=region,
+                       transform=ccrs.PlateCarree(),
+                       marker='^')
+        # Shrink the axes to make room on the right for the legend
+        box = ax.get_position()
+        ax.set_position([box.x0, box.y0, box.width * 0.7, box.height])
+        # Place legend outside the plot on the right, centered vertically
+        ax.legend(loc='center left', bbox_to_anchor=(1.15, 0.5))
+        plt.savefig(save_dir)

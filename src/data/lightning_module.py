@@ -32,7 +32,7 @@ layout = {
 }
 
 class scenarIALightningModule(pl.LightningModule):
-    def __init__(self, config:dict):
+    def __init__(self, config:dict, lats=None):
         super().__init__()
         self.seq_length = config['data']['seq_length']
         self.learning_rate = config['train']['learning_rate']
@@ -47,7 +47,7 @@ class scenarIALightningModule(pl.LightningModule):
         os.makedirs(self.runs_dir, exist_ok=True)
 
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.lats = torch.linspace(-90, 90, self.img_size[0]).to(device)
+        self.lats = lats.to(device) if lats is not None else torch.linspace(-90, 90, self.img_size[0]).to(device)
         self.loss = LLweighted_MSELoss_Climax(lats=self.lats)
         #self.loss = nn.MSELoss()
         self.metrics_dict = nn.ModuleDict({

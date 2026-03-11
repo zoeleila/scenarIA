@@ -7,12 +7,15 @@ from datetime import datetime
 import pandas as pd
 
 from scenarIA.src.utils.settings import CONFIG_DIR, GRAPHS_DIR, RUNS_DIR
-from scenarIA.src.data.dataloader import get_dataloaders
+from scenarIA.src.data.dataloader import get_dataloaders, get_climatology
 from scenarIA.src.data.lightning_module import scenarIALightningModule
 from scenarIA.src.utils.evalutils import EvaluationPlots, compare_metric_maps, compare_temporal_profiles
 
 
-def predict(runs_dict, seeds_mean = False, eval_func=None, plot_save_dir=None):
+def predict(runs_dict, 
+            seeds_mean=False, 
+            eval_func=None, 
+            plot_save_dir=None):
     # TODO adapt to multi variate ??
     y_all = []
     t_all = []
@@ -29,7 +32,7 @@ def predict(runs_dict, seeds_mean = False, eval_func=None, plot_save_dir=None):
             hparams = model.hparams['config']
             outputs = hparams['train']['outputs']
             test_dataloader = get_dataloaders('test', config=hparams)
-
+            clim = get_climatology(config=hparams).squeeze()
             y_hat_all = []
             for batch in tqdm(test_dataloader, desc="Computing stats from dataloader"):
                 if i == 0 and seed == 0:
@@ -49,7 +52,7 @@ def predict(runs_dict, seeds_mean = False, eval_func=None, plot_save_dir=None):
             eval_func.plot_diff_maps(torch.cat(y_all, dim=0).squeeze().numpy()[-21:,:,:], 
                                     np.stack(y_hat_all_seeds, axis=0).mean(axis=0)[-21:,:,:], 
                                     np.stack(y_hat_all_seeds, axis=0).std(axis=0)[-21:,:,:], 
-                                    title=f'{test_name} (2080-2100)', 
+                                    title=f'{test_name} (2080-2100)',
                                     save_path=plot_save_dir/f'diff_maps_{outputs_str}_{test_name}.png')
         if seeds_mean:
             y_hat_all_seeds = np.stack(y_hat_all_seeds, axis=0)
@@ -77,25 +80,9 @@ if __name__=='__main__':
         config_plots = yaml.safe_load(file)
 
     graph_dir = GRAPHS_DIR/f'runs/MPI-ESM1-2-LR/annual/exp1/'
-    #eval_func = EvaluationPlots(simulation_name='ssp245', var_name='pr', config_plots=config_plots)
     runs_dict = runs['compare']['runs_to_compare']
-    y, y_hat_dict, t, infos = predict(runs_dict)
-    idx_points_dict = {'South America': [48, 157],
-           'Central Africa': [52, 10],
-           'East Asia': [65, 61],
-           'Eq Pacific Ocean': [46, 91],
-           'Eq Atlantic Ocean': [50, 171],
-           'Arctic Ocean': [90, 36],
-            'West Europe': [73, 3]}
+    eval_func = EvaluationPlots(config_plots=config_plots, simulation_name='ssp245', var_name='tas')
+    y, y_hat_dict, t, infos = predict(runs_dict,
+                                        eval_func=eval_func, 
+                                        plot_save_dir=graph_dir)
 
-    for region, point in idx_points_dict.items():
-        region_str = region.replace(' ', '_')
-        compare_temporal_profiles(y, y_hat_dict, t, 
-                                var_name='tas', 
-                                point=point,
-                                config_plots=config_plots, 
-                                title=f'ssp245 (MPI-ESM1-2-LR annual exp1) \n {region}', 
-                                save_dir=graph_dir / f'ssp245_temporal_profile_tas_seq_length_{region_str}.png')
-    
-
-    

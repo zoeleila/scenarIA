@@ -6,7 +6,7 @@ import matplotlib.colors as colors
 import cartopy.feature as cfeature
 import torch
 
-from scenarIA.src.utils.datautils import weighted_global_mean
+from scenarIA.src.utils.datautils import weighted_global_mean, apply_moving_average
 from scenarIA.src.utils.metrics import NRMSE_ClimateBench, NRMSE_g_ClimateBench, NRMSE_s_ClimateBench
 import csv
 
@@ -75,7 +75,6 @@ class EvaluationPlots():
             levels=None
 
         for i, data in enumerate([y_true, y_pred]):
-            data = np.flip(data, axis=0)
             ax = axes[i]
             cs = ax.contourf(data,
                      cmap=cmap,
@@ -231,7 +230,8 @@ class EvaluationPlots():
         else:
             plt.show()
     
-def compare_temporal_profiles(y, y_hat_dict, t, var_name, point=None, config_plots=None, title=None, save_dir=None):
+
+def compare_temporal_profiles(y, y_hat_dict, t, var_name, point=None, window_size:int=None, config_plots=None, title=None, save_dir=None):
 
     lats = np.linspace(-90, 90, y.shape[-2])
     unit = config_plots[var_name]['unit'] if config_plots else ''
@@ -264,8 +264,14 @@ def compare_temporal_profiles(y, y_hat_dict, t, var_name, point=None, config_plo
         line, = plt.plot(t, y_hat_mean, label=f'pred {test}')
         color = line.get_color()
         plt.fill_between(t, y_hat_mean - 2*y_hat_std, y_hat_mean + 2*y_hat_std, color=color, alpha=0.1)
-        
-    plt.plot(t, y, label='true', color='k')
+
+    if window_size:
+        y_window = apply_moving_average(y, window_size)
+        t_window = t[window_size//2 : -window_size//2 + 1] if window_size % 2 == 0 else t[window_size//2 : -(window_size//2)]
+        plt.plot(t_window, y_window, label=f'true {window_size}-yr avg.', color='k')
+        plt.plot(t, y, label='true', color='k', alpha=0.1)
+    else:
+        plt.plot(t, y, label='true', color='k')
     plt.ylim(vmin, vmax)
     plt.xlabel('Time')
     plt.ylabel(f'{var_name} {unit}')
@@ -321,7 +327,7 @@ def compare_metric_maps(y, y_hat_dict, t, var_name,
         else:
             y_hat_dict[test] = y_hat[0]
     config_plots = config_plots[var_name] if config_plots else None
-    metrics = ['rmse', 'mean_error', 'error']
+    metrics = ['rmse', 'mean_error']
     
     for metric in metrics:
         cnorm = None
@@ -354,35 +360,12 @@ def compare_metric_maps(y, y_hat_dict, t, var_name,
                 y_p = y[mask]
                 y_hat_p = y_hat[mask]
 
-                index = None
                 if metric == 'rmse':
                     map = np.sqrt(np.mean((y_p - y_hat_p)**2, axis=0))
-                    if var_name == 'pr':
-                        index = np.where(map > 0.5)
-                    elif var_name == 'tas':
-                        index = np.where(map > 0.6)
-                elif metric == 'mean_error':
-                    map = np.mean((y_hat_p - y_p), axis=0)
-                    if var_name == 'pr':
-                        index = np.where(np.abs(map) > 0.4)
-                    elif var_name == 'tas':
-                        index = np.where(np.abs(map) > 0.5)
-                elif metric == 'error':
-                    map = np.mean(y_hat_p, axis=0) - np.mean(y_p, axis=0)
 
-                # Write index list to CSV for the last period (i) and last test (j)
-                if (index is not None) and (i == n_periods - 1) and (j == n_tests - 1):
-                    # Prepare path
-                    fname = save_dir / f"{metric}_indices_{var_name}_{start}-{end}.csv"
-                    # Zip indices and write rows
-                    lat_idxs = index[0].tolist()
-                    lon_idxs = index[1].tolist()
-                    with open(str(fname), 'w', newline='') as csvfile:
-                        writer = csv.writer(csvfile)
-                        writer.writerow(['metric', 'lat_idx', 'lon_idx', 'value'])
-                        for r, c in zip(lat_idxs, lon_idxs):
-                            writer.writerow([metric, int(r), int(c), map[int(r), int(c)]])
-                
+                elif metric == 'mean_error':
+                    map = np.mean(y_hat_p - y_p, axis=0)
+
                 ax = axes[i, j]
                 cs = ax.contourf(map,
                     transform=ccrs.PlateCarree(),
