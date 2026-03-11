@@ -9,7 +9,7 @@ import pandas as pd
 from scenarIA.src.utils.settings import CONFIG_DIR, GRAPHS_DIR, RUNS_DIR
 from scenarIA.src.data.dataloader import get_dataloaders, get_climatology
 from scenarIA.src.data.lightning_module import scenarIALightningModule
-from scenarIA.src.utils.evalutils import EvaluationPlots, compare_metric_maps, compare_temporal_profiles
+from scenarIA.src.utils.evalutils import EvaluationPlots, compare_metric_maps, compare_metrics, compare_temporal_profiles
 
 
 def predict(runs_dict, 
@@ -74,6 +74,7 @@ def predict(runs_dict,
 
 
 if __name__=='__main__':
+    #TODO : add argparse for runs to compare, var to compare, plot type to compare, save dir for plots
     with open(CONFIG_DIR / 'runs.yaml') as file:
         runs = yaml.safe_load(file)
     with open(CONFIG_DIR / 'plots.yaml') as file:
@@ -81,8 +82,9 @@ if __name__=='__main__':
 
     graph_dir = GRAPHS_DIR/f'runs/MPI-ESM1-2-LR/annual/exp1/'
     runs_dict = runs['compare']['runs_to_compare']
-    eval_func = EvaluationPlots(config_plots=config_plots, simulation_name='ssp245', var_name='tas')
-    y, y_hat_dict, t, infos = predict(runs_dict,
-                                        eval_func=eval_func, 
-                                        plot_save_dir=graph_dir)
+    #eval_func = EvaluationPlots(config_plots=config_plots, simulation_name='ssp245', var_name='tas')
+    y, y_hat_dict, t, infos = predict(runs_dict, seeds_mean=True)
+    var_name = 'pr'
+    compare_metrics(y, y_hat_dict, var_name, config_plots=config_plots, 
+                    title='ssp245 2080-2100 (MPI-ESM1-2-LR annual)', save_dir=graph_dir)
 

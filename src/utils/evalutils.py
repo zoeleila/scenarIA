@@ -293,11 +293,13 @@ def compare_metrics(y, y_hat_dict, var_name, config_plots=None, title=None, save
         metric_dict['srmse'][test] = NRMSE_s_ClimateBench(torch.tensor(y_hat_mean), 
                                                         torch.tensor(y), 
                                                         torch.tensor(lats),
-                                                        normalize=False)
+                                                        normalize=False,
+                                                        weights_normalization='mean')
         metric_dict['grmse'][test] = NRMSE_g_ClimateBench(torch.tensor(y_hat_mean), 
                                                         torch.tensor(y), 
                                                         torch.tensor(lats),
-                                                        normalize = False)
+                                                        normalize = False,
+                                                        weights_normalization='mean')
         ## add ACC
 
     for metric in metric_dict:
@@ -309,7 +311,7 @@ def compare_metrics(y, y_hat_dict, var_name, config_plots=None, title=None, save
         plt.grid(axis='y', alpha=0.5)
         plt.title(title)
         plt.ylabel(f'{var_name} {metric}') # TODO add unit if unit
-        plt.savefig(save_dir / f'{metric}_bar_plot_{var_name}_notnorm.png')
+        plt.savefig(save_dir / f'{metric}_bar_plot_{var_name}.png')
 
 
 def compare_metric_maps(y, y_hat_dict, t, var_name,

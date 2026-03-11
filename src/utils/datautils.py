@@ -146,7 +146,7 @@ def compute_annual_means(ds, resample_time='Y'):
 
 
 
-def compute_weights_from_lats(lats, deg2rad=True, weights_normalize=True):
+def compute_weights_from_lats(lats, deg2rad=True, weights_normalization='sum'):
     if isinstance(lats, np.ndarray):
         if deg2rad:
             weights = np.cos((np.pi * lats) / 180)
@@ -164,24 +164,26 @@ def compute_weights_from_lats(lats, deg2rad=True, weights_normalize=True):
             weights = np.cos(np.deg2rad(lats))
         else:
             weights = np.cos(lats)
-    if weights_normalize:
+    if weights_normalization == 'sum':
         weights = weights / weights.sum() # attention, NRMSE_ClimateBench pas de normalisation des po
+    elif weights_normalization == 'mean':
+        weights = weights / weights.mean() # attention, NRMSE_ClimateBench pas de normalisation des po
     return weights
 
-def weighted_global_mean(data, lats=None, deg2rad=True, weights_normalize=True):
+def weighted_global_mean(data, lats=None, deg2rad=True, weights_normalization='sum'):
     if isinstance(data, np.ndarray):
         assert lats.shape[0] == data.shape[-2], "Latitude dimension does not match data shape."
-        weights = compute_weights_from_lats(lats, deg2rad=deg2rad, weights_normalize=weights_normalize)
+        weights = compute_weights_from_lats(lats, deg2rad=deg2rad, weights_normalization=weights_normalization)
         data = np.mean(data * weights, axis=(-2, -1))
 
     elif isinstance(data, torch.Tensor):
         assert lats.shape[0] == data.shape[-2], "Latitude dimension does not match data shape."
-        weights = compute_weights_from_lats(lats, deg2rad=deg2rad, weights_normalize=weights_normalize)
+        weights = compute_weights_from_lats(lats, deg2rad=deg2rad, weights_normalization=weights_normalization)
         data = torch.mean(data * weights, dim=(-2, -1))
 
     elif isinstance(data, xr.Dataset) or isinstance(data, xr.DataArray):
         data = standardize_dims_and_coords(data)
-        weights = compute_weights_from_lats(data.lat, deg2rad=deg2rad, weights_normalize=weights_normalize)
+        weights = compute_weights_from_lats(data.lat, deg2rad=deg2rad, weights_normalization=weights_normalization)
         data = data.weighted(weights).mean(['lat', 'lon'])
     return data
     
