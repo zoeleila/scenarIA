@@ -6,7 +6,7 @@ import numpy as np
 from datetime import datetime
 import pandas as pd
 
-from scenarIA.src.utils.settings import CONFIG_DIR, GRAPHS_DIR, RUNS_DIR
+from scenarIA.src.utils.settings import CONFIG_DIR, GRAPHS_DIR, RUNS_DIR, DATASET_DIR
 from scenarIA.src.data.dataloader import get_dataloaders, get_climatology
 from scenarIA.src.data.lightning_module import scenarIALightningModule
 from scenarIA.src.utils.evalutils import EvaluationPlots, compare_metric_maps, compare_metrics, compare_temporal_profiles
@@ -24,18 +24,19 @@ def predict(runs_dict,
     for i, test_name in enumerate(runs_dict.keys()):
         runs_list = runs_dict[test_name]
         y_hat_all_seeds = [] # if different seeds
-        for seed, run_dir in enumerate(runs_list):
+        for seed_idx, run_dir in enumerate(runs_list):
             print(run_dir)
             checkpoint_dir = glob.glob(str(RUNS_DIR / run_dir / 'checkpoints/best-checkpoint*.ckpt'))[0]
             model = scenarIALightningModule.load_from_checkpoint(checkpoint_dir, map_location='cpu')
             model.eval()
             hparams = model.hparams['config']
+            if i == 0 and seed_idx == 0:
+                lats = dict(np.load(DATASET_DIR / hparams['data']['dataset_path'] / 'coords.npz', allow_pickle=True))['lat']
             outputs = hparams['train']['outputs']
             test_dataloader = get_dataloaders('test', config=hparams)
-            clim = get_climatology(config=hparams).squeeze()
             y_hat_all = []
             for batch in tqdm(test_dataloader, desc="Computing stats from dataloader"):
-                if i == 0 and seed == 0:
+                if i == 0 and seed_idx == 0:
                     x, y, t = batch
                     y_all.append(y)
                     t_all.append(t)
@@ -54,6 +55,10 @@ def predict(runs_dict,
                                     np.stack(y_hat_all_seeds, axis=0).std(axis=0)[-21:,:,:], 
                                     title=f'{test_name} (2080-2100)',
                                     save_path=plot_save_dir/f'diff_maps_{outputs_str}_{test_name}.png')
+            eval_func.plot_all_maps(y_true=torch.cat(y_all, dim=0).squeeze().numpy()[-21:,:,:],
+                                    y_pred_list=[y_hat_all_seeds[i][-21:,:,:] for i in range(len(y_hat_all_seeds))],
+                                    title=f'{test_name} (2080-2100)',
+                                    save_path=plot_save_dir/f'seeds_maps_{outputs_str}_{test_name}.png')
         if seeds_mean:
             y_hat_all_seeds = np.stack(y_hat_all_seeds, axis=0)
             y_hat_all_seeds = y_hat_all_seeds.mean(axis=0)
@@ -64,7 +69,8 @@ def predict(runs_dict,
     t_all = np.array([np.datetime64(datetime(year, month, day)) for year, month, day, *_ in t_all])
     t_all = pd.to_datetime(t_all, format="%Y-%m-%d")
     infos = {'outputs': outputs,
-             'simus_test': hparams['train']['simus_test']}
+             'simus_test': hparams['train']['simus_test'],
+             'lats': lats}
     return y_all, y_hat_dict, t_all, infos
 
 #def load_xr_to_dict(): TODO
@@ -81,10 +87,12 @@ if __name__=='__main__':
         config_plots = yaml.safe_load(file)
 
     graph_dir = GRAPHS_DIR/f'runs/MPI-ESM1-2-LR/annual/exp1/'
+    var_name = 'tas'
     runs_dict = runs['compare']['runs_to_compare']
-    #eval_func = EvaluationPlots(config_plots=config_plots, simulation_name='ssp245', var_name='tas')
-    y, y_hat_dict, t, infos = predict(runs_dict, seeds_mean=True)
-    var_name = 'pr'
-    compare_metrics(y, y_hat_dict, var_name, config_plots=config_plots, 
+    #eval_func = EvaluationPlots(config_plots=config_plots, simulation_name='ssp245', var_name=var_name)
+    y, y_hat_dict, t, infos = predict(runs_dict)
+  
+    lats = infos['lats']
+    compare_metrics(y, y_hat_dict, var_name, lats, config_plots=config_plots, 
                     title='ssp245 2080-2100 (MPI-ESM1-2-LR annual)', save_dir=graph_dir)
 

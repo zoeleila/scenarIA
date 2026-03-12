@@ -229,7 +229,88 @@ class EvaluationPlots():
             plt.savefig(save_path)
         else:
             plt.show()
-    
+
+    def plot_all_maps(self,
+                      y_true,
+                      y_pred_list,
+                      title=None,
+                      save_path=None,
+                      max_cols: int = 4):
+        """ Plot spatial maps with y_true and all individual predictions and the mean prediction.
+        Arranges maps in a grid with up to max_cols columns so many predictions don't appear in a single row.
+        """
+        # protect against empty predictions list
+        if len(y_pred_list) == 0:
+            maps = [y_true]
+            names = ['True']
+        else:
+            pred_mean = np.mean(y_pred_list, axis=0)
+            maps = [y_true] + y_pred_list + [pred_mean]
+            print(len(maps))
+            names = ['True'] + [f'Pred {i}' for i in range(len(y_pred_list))] + ['Pred mean']
+
+        n = len(maps)
+        ncols = min(max_cols, n)
+        nrows = (n + ncols - 1) // ncols
+
+        fig, axes = plt.subplots(nrows, ncols,
+                                 figsize=(4 * ncols, 4 * nrows),
+                                 subplot_kw={'projection': ccrs.Robinson()},
+                                 constrained_layout=True)
+        # flatten axes array for easy indexing
+        if isinstance(axes, np.ndarray):
+            axes_flat = axes.ravel()
+        else:
+            axes_flat = np.array([axes])
+
+        for i, (map_obj, name) in enumerate(zip(maps, names)):
+            ax = axes_flat[i]
+            map2d = map_obj.mean(axis=0) if map_obj.ndim == 3 else map_obj
+
+            if name == 'True':
+                cmap = self.config_plots['cmap']['values'] if self.config_plots else 'viridis'
+                data_to_plot = map2d
+                lim = self.config_plots['lim']['values'] if self.config_plots else [None, None]
+            else:
+                cmap = self.config_plots['cmap']['mean_error'] if self.config_plots else 'coolwarm'
+                # show difference to true mean for predictions
+                true_mean = y_true.mean(axis=0) if y_true.ndim == 3 else y_true
+                data_to_plot = map2d - true_mean
+                lim = self.config_plots['lim']['mean_error'] if self.config_plots else [None, None]
+
+            levels = np.linspace(lim[0], lim[1], 11) if lim[0] is not None else None
+            cs = ax.contourf(data_to_plot,
+                             cmap=cmap,
+                             levels=levels,
+                             extent=self.domain,
+                             transform=self.projection,
+                             extend='both')
+
+            ax.set_title(name)
+            ax.add_feature(cfeature.COASTLINE, linewidth=0.8, alpha=0.7)
+            cbar = fig.colorbar(cs, ax=ax, shrink=0.7,
+                                orientation='horizontal',
+                                location='bottom',
+                                pad=0.05,
+                                aspect=30,
+                                label=f'{self.var_name} ({self.unit})')
+            if self.config_plots:
+                cbar.set_ticks(np.linspace(lim[0], lim[1], 5))
+                cbar.set_ticklabels([str(round(float(i), 1)) for i in np.linspace(lim[0], lim[1], 5)])
+
+        # turn off any unused subplots
+        for j in range(n, len(axes_flat)):
+            try:
+                axes_flat[j].axis('off')
+            except Exception:
+                pass
+
+        fig.suptitle(title)
+        if save_path:
+            plt.savefig(save_path)
+        else:
+            plt.show()
+
 
 def compare_temporal_profiles(y, y_hat_dict, t, var_name, point=None, window_size:int=None, config_plots=None, title=None, save_dir=None):
 
@@ -279,29 +360,41 @@ def compare_temporal_profiles(y, y_hat_dict, t, var_name, point=None, window_siz
     plt.title(title)
     plt.savefig(save_dir)
 
-def compare_metrics(y, y_hat_dict, var_name, config_plots=None, title=None, save_dir=None):
-    lats = np.linspace(-90, 90, y.shape[-2])
+def compare_metrics(y, y_hat_dict, var_name, lats=None, config_plots=None, title=None, save_dir=None):
+    lats = np.linspace(-90, 90, y.shape[-2]) if lats is None else lats
     y = y[-21:,:,:]
+    print(lats)
     metric_dict = {'nrmse':{},
                    'srmse' : {},
                    'grmse': {}}
     for test, y_hat in y_hat_dict.items():  
-        y_hat_mean = y_hat[-21:,:,:]
-        metric_dict['nrmse'][test] = NRMSE_ClimateBench(torch.tensor(y_hat_mean), 
+        print(y_hat[0].shape)
+        metric_dict['nrmse'][test] = [NRMSE_ClimateBench(torch.tensor(y_hat[i][-21:,:,:]), 
                                                         torch.tensor(y), 
-                                                        torch.tensor(lats))
-        metric_dict['srmse'][test] = NRMSE_s_ClimateBench(torch.tensor(y_hat_mean), 
+                                                        torch.tensor(lats)) for i in range(len(y_hat))]
+        metric_dict['srmse'][test] = [NRMSE_s_ClimateBench(torch.tensor(y_hat[i][-21:,:,:]), 
                                                         torch.tensor(y), 
                                                         torch.tensor(lats),
                                                         normalize=False,
-                                                        weights_normalization='mean')
-        metric_dict['grmse'][test] = NRMSE_g_ClimateBench(torch.tensor(y_hat_mean), 
+                                                        weights_normalization='mean') for i in range(len(y_hat))]
+        metric_dict['grmse'][test] = [NRMSE_g_ClimateBench(torch.tensor(y_hat[i][-21:,:,:]), 
                                                         torch.tensor(y), 
                                                         torch.tensor(lats),
                                                         normalize = False,
-                                                        weights_normalization='mean')
+                                                        weights_normalization='mean') for i in range(len(y_hat))]
         ## add ACC
-
+    '''
+    for metric in metric_dict:
+        test_names = metric_dict[metric].keys()
+        metric_values = metric_dict[metric].values()
+        print(f'{test_names} = {metric_values}')
+        plt.figure(figsize=(8,4))
+        plt.boxplot(metric_values, labels=test_names)
+        plt.grid(axis='y', alpha=0.5)
+        plt.title(title)
+        plt.ylabel(f'{var_name} {metric}') # TODO add unit if unit
+        plt.savefig(save_dir / f'{metric}_box_plot_{var_name}.png')
+    '''
     for metric in metric_dict:
         test_names = metric_dict[metric].keys()
         metric_values = metric_dict[metric].values()
@@ -312,7 +405,6 @@ def compare_metrics(y, y_hat_dict, var_name, config_plots=None, title=None, save
         plt.title(title)
         plt.ylabel(f'{var_name} {metric}') # TODO add unit if unit
         plt.savefig(save_dir / f'{metric}_bar_plot_{var_name}.png')
-
 
 def compare_metric_maps(y, y_hat_dict, t, var_name,
                       periods=[['2020', '2050'],['2070', '2100']],
