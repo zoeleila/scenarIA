@@ -145,6 +145,7 @@ def plot_map_image(var,
     else:
         print('coucou')
         plt.savefig(save_dir)
+        plt.close()
 
 def plot_multi_samples(data, 
                        n_rows=2, 

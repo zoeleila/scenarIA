@@ -1,9 +1,11 @@
 from re import A
+from scenarIA.src.utils.settings import GRAPHS_DIR
 import xarray as xr
 import torch
 import pandas as pd
 import numpy as np
 import glob
+from scipy.stats import bootstrap
 
 
 
@@ -195,12 +197,28 @@ def save_coords_from_ds(ds, save_path):
     coords = {'lon': ds.lon.values, 'lat': ds.lat.values}
     np.savez(save_path, **coords)
 
+def get_statistics_from_bootstrap(data, n_bootstrap=1000):
+    ''' data [n_samples, ...] '''
+    res = bootstrap((data,), 
+                    np.mean,
+                    axis=0, 
+                    n_resamples=n_bootstrap, 
+                    method='basic', 
+                    confidence_level=0.975, 
+                    random_state=42)
+    return res
+    
 
 if __name__ == "__main__":
-    files = glob.glob('/gpfs-calypso/scratch/globc/garcia/scenarIA/datasets/MPI-ESM1-2-LR/annual/inputs*regrid.nc')
-    print(files)
-    for file in files:
-        ds = xr.open_dataset(file)
-        print(ds)
-        ds = ds[ ['CO2', 'SO2', 'CH4', 'BC']]
-        print(ds)
+    data = np.random.rand(100, 96, 192)
+    res = get_statistics_from_bootstrap(data, n_bootstrap=1000)
+    print("Bootstrap confidence interval:", res.confidence_interval)
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots()
+    print(res.bootstrap_distribution.shape)
+    ax.hist(res.bootstrap_distribution.mean(axis=(1,2)), bins=25)
+    ax.set_title('Bootstrap Distribution')
+    ax.set_xlabel('mean value of runs')
+    ax.set_ylabel('frequency')
+    plt.savefig(GRAPHS_DIR/ 'test.png')
+    plt.close()

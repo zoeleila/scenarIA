@@ -9,7 +9,7 @@ import pandas as pd
 from scenarIA.src.utils.settings import CONFIG_DIR, GRAPHS_DIR, RUNS_DIR, DATASET_DIR
 from scenarIA.src.data.dataloader import get_dataloaders, get_climatology
 from scenarIA.src.data.lightning_module import scenarIALightningModule
-from scenarIA.src.utils.evalutils import EvaluationPlots, compare_metric_maps, compare_metrics, compare_temporal_profiles
+from scenarIA.src.utils.evalutils import EvaluationPlots, compare_metric_maps2, compare_metric_maps,compare_metrics, compare_temporal_profiles
 
 
 def predict(runs_dict, 
@@ -93,6 +93,4 @@ if __name__=='__main__':
     y, y_hat_dict, t, infos = predict(runs_dict)
   
     lats = infos['lats']
-    compare_metrics(y, y_hat_dict, var_name, lats, config_plots=config_plots, 
-                    title='ssp245 2080-2100 (MPI-ESM1-2-LR annual)', save_dir=graph_dir)
-
+    compare_metrics(y, y_hat_dict, lats=lats, var_name=var_name, title=None, save_dir=graph_dir)
