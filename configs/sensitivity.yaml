@@ -1,0 +1,5 @@
+base_config: scenarIA/configs/config.yaml
+grid:
+  data.nb_member_per_subsets: [5, 30, 50]
+  train.seed : [42, 43, 44, 45, 46, 47, 48, 49, 50, 51]
+

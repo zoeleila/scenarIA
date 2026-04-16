@@ -1,4 +1,5 @@
 from re import A
+import re
 from scenarIA.src.utils.settings import GRAPHS_DIR
 import xarray as xr
 import torch
@@ -86,7 +87,14 @@ def standardize_dim_order(ds, priority_dims = ['time', 'lat', 'lon', 'member']):
 
 
 def standardize_time(ds, original_time_format="%Y"):
-    return ds.assign_coords(time=pd.to_datetime(ds.time.values, format=original_time_format))
+    time_values = ds.time.values
+
+    if np.issubdtype(time_values.dtype, np.datetime64):
+        return ds
+
+    if original_time_format is not None:
+        parsed = pd.to_datetime(time_values.astype(str), format=original_time_format)
+        return ds.assign_coords(time=parsed.values)
 
 
 def standardize_units(ds):
@@ -128,13 +136,13 @@ def drops_useless_vars(ds,
             pass
     return ds
     
-def dataset_xr_formatting(ds, original_time_format = "%Y"):
+def dataset_xr_formatting(ds, original_time_format = "%Y", priority_dims = ['time', 'lat', 'lon', 'member']):
     ds = standardize_dims_and_coords(ds)
     ds = standardize_latlon(ds)
     ds = standardize_time(ds, original_time_format)
     ds = standardize_units(ds)
     ds = drops_useless_vars(ds)
-    ds = standardize_dim_order(ds)
+    ds = standardize_dim_order(ds, priority_dims=priority_dims)
     return ds
 
 def compute_annual_means(ds, resample_time='Y'):

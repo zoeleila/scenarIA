@@ -1,7 +1,9 @@
+from ast import parse
 import random
 import numpy as np
 import torch
 import yaml
+import argparse
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
 import pytorch_lightning as pl
@@ -13,68 +15,53 @@ from scenarIA.src.utils.settings import CONFIG_DIR, RUNS_DIR, DATASET_DIR
 
 torch.cuda.is_available()
 
-with open(CONFIG_DIR / 'config.yaml') as file:
-    config = yaml.safe_load(file)
-'''
-c1 = {'seq_length': 10,
-           'nb_member_per_subsets': 30}
-c2 = {'seq_length': 1,
-           'nb_member_per_subsets': 30}
-c3 = {'seq_length': 5,
-           'nb_member_per_subsets': 30}
-c4 = {'seq_length': 10,
-           'nb_member_per_subsets': 5}
-c5 = {'seq_length': 10,
-           'nb_member_per_subsets': 50}
-configs = [c1, c2, c3, c4, c5]
-seeds = [46, 47]
-run_dir_default = config['train']['runs_dir']
-'''
-#for cfg in configs:
-    #config['data']['seq_length'] = cfg['seq_length']
-    #config['data']['nb_member_per_subsets'] = cfg['nb_member_per_subsets']
+def run(config):
+    save_infos_from_config(config)
+    test_name = test_name_from_config(config)
+    config['train']['test_name'] = test_name
+    config['train']['runs_dir'] = config['train']['runs_dir'] + test_name
+    lats = dict(np.load(DATASET_DIR / config['data']['dataset_path'] / 'coords.npz', allow_pickle=True))['lat']
 
-    #for s in seeds:
-        #config['train']['seed'] = s
+    seed = config['train'].get('seed', 42)
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
 
-save_infos_from_config(config)
-test_name = test_name_from_config(config)
-#config['train']['runs_dir'] = run_dir_default # remove after
-config['train']['test_name'] = test_name
-config['train']['runs_dir'] = config['train']['runs_dir'] + test_name
-lats = dict(np.load(DATASET_DIR / config['data']['dataset_path'] / 'coords.npz', allow_pickle=True))['lat']
+    train_dataloader = get_dataloaders('train', config)
+    val_dataloader = get_dataloaders('val', config)
+    test_dataloader = get_dataloaders('test', config)
 
-seed = config['train'].get('seed', 42)
-random.seed(seed)
-np.random.seed(seed)
-torch.manual_seed(seed)
-torch.cuda.manual_seed_all(seed)
+    model = scenarIALightningModule(config, lats=torch.tensor(lats))
 
-train_dataloader = get_dataloaders('train', config)
-val_dataloader = get_dataloaders('val', config)
-test_dataloader = get_dataloaders('test', config)
+    logger = TensorBoardLogger(save_dir=RUNS_DIR / config['train']['runs_dir'], name='lightning_logs')
 
-model = scenarIALightningModule(config, lats=torch.tensor(lats))
+    checkpoint_callback = ModelCheckpoint(
+        monitor="val_loss", 
+        filename='best-checkpoint-{epoch:02d}-{val_loss:.2f}',
+        save_top_k=1,
+        mode='min'
+    )
 
-logger = TensorBoardLogger(save_dir=RUNS_DIR / config['train']['runs_dir'], name='lightning_logs')
+    torch.set_float32_matmul_precision('high') # For hybrid partition
 
-checkpoint_callback = ModelCheckpoint(
-    monitor="val_loss", 
-    filename='best-checkpoint-{epoch:02d}-{val_loss:.2f}',
-    save_top_k=1,
-    mode='min'
-)
+    trainer = pl.Trainer(max_epochs=config['train']['max_epochs'], 
+                        default_root_dir= RUNS_DIR / config['train']['runs_dir'],
+                        log_every_n_steps=1,
+                        accelerator="gpu",
+                        devices="auto",
+                        precision='16-mixed',
+                        logger=logger,
+                        callbacks=checkpoint_callback)
 
-torch.set_float32_matmul_precision('high') # For hybrid partition
+    trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=val_dataloader)
+    trainer.test(model, dataloaders=test_dataloader, ckpt_path='best')
 
-trainer = pl.Trainer(max_epochs=config['train']['max_epochs'], 
-                    default_root_dir= RUNS_DIR / config['train']['runs_dir'],
-                    log_every_n_steps=1,
-                    accelerator="gpu",
-                    devices="auto",
-                    precision='16-mixed',
-                    logger=logger,
-                    callbacks=checkpoint_callback)
+if __name__ == "__main__":
+    parser= argparse.ArgumentParser()
+    parser.add_argument('--config', type=str, default='config.yaml', help='Path to the config file')
+    args = parser.parse_args()
 
-trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=val_dataloader)
-trainer.test(model, dataloaders=test_dataloader, ckpt_path='best')
+    with open(CONFIG_DIR / args.config) as file:
+        config = yaml.safe_load(file)
+    run(config)

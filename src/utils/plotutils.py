@@ -8,7 +8,7 @@ import cartopy.feature as cfeature
 from matplotlib import gridspec
 import yaml
 
-from scenarIA.src.utils.settings import GRAPHS_DIR, CONFIG_DIR
+from scenarIA.src.utils.settings import GRAPHS_DIR, CONFIG_DIR, DATASET_DIR
 from scenarIA.src.utils.datautils import dataset_xr_formatting, weighted_global_mean
 
 
@@ -22,7 +22,7 @@ def plot_mean_std_simulations(files_dict,
                                 save_path=None):
 
     
-    plt.figure(figsize=(6, 4)) 
+    plt.figure(figsize=(8, 5)) 
     for simu, files in files_dict.items():
         if isinstance(files, str) or isinstance(files, Path):
             files = [files]
@@ -40,7 +40,10 @@ def plot_mean_std_simulations(files_dict,
                 ds = xr.open_dataset(file)
                 ds = dataset_xr_formatting(ds, original_time_format = "%Y")
                 ds = ds[var_name]
-            unit = ds.attrs["units"]
+            if var_name == 'tas':
+                ds.attrs["units"] = '°C'
+                ds.values = ds.values - 273.15
+            unit = ds.attrs["units"]            
             ds = weighted_global_mean(ds)
 
             # TODO : add climatology file
@@ -146,6 +149,56 @@ def plot_map_image(var,
         print('coucou')
         plt.savefig(save_dir)
         plt.close()
+
+def plot_map_contour(var,
+                     var_desc: str = None,
+                     cmap: str = "OrRd",
+                     fig_projection = ccrs.PlateCarree(),
+                     data_projection = ccrs.PlateCarree(),
+                     levels: list = None,
+                     domain: list = [0, 360, -90, 90],
+                     title: str = None,
+                     save_dir: str = None
+                     ):
+    """Plots a contour map using the provided data and configurations.
+
+    Args:
+        var: The data to be plotted, typically a 2D array or similar structure.
+        var_desc (str, optional): Description of the variable to be used as the colorbar label.
+        cmap (str, optional): Colormap to be used for the plot. Defaults to 'OrRd'.
+        fig_projection (ccrs.Projection, optional): The map projection for the figure. Defaults to PlateCarree.
+        data_projection (ccrs.Projection, optional): The projection of the input data. Defaults to PlateCarree.
+        levels (list, optional): Contour levels for the plot. If None, levels are automatically determined.
+        domain (list, optional): The geographical extent of the plot in the format [min_lon, max_lon, min_lat, max_lat].
+        title (str, optional): Title of the plot. Defaults to None.
+        save_dir (str, optional): File path to save the plot. If None, the function returns the figure and axis objects.
+
+    Returns:
+        tuple: A tuple containing the figure and axis objects if `save_dir` is None. Otherwise, saves the plot to the specified directory.
+    """
+
+    fig, ax = plt.subplots(
+        figsize=(6, 5),
+        subplot_kw={"projection": fig_projection}
+    )
+    cs = ax.contourf(var,
+                     cmap=cmap,
+                     levels=levels,
+                     extent=domain,
+                     transform=data_projection
+                    )
+    ax.add_feature(cfeature.COASTLINE, edgecolor='black', linewidth=1, zorder=10, alpha=0.7)
+
+    cbar = plt.colorbar(cs, ax=ax, pad=0.05, shrink=0.8)
+    cbar.set_label(label=var_desc, size=14, labelpad=10)
+    cbar.ax.tick_params(labelsize=14)
+    plt.tight_layout()
+    plt.title(title, fontsize=16, pad=10)
+    if save_dir is None:
+        return fig, ax
+    else:
+        plt.savefig(save_dir)
+        return None
 
 def plot_multi_samples(data, 
                        n_rows=2, 

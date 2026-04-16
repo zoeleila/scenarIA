@@ -1,5 +1,6 @@
 import glob
 from pathlib import Path
+from re import I
 import xesmf as xe
 import xarray as xr
 from scenarIA.src.utils.datautils import compute_annual_means, dataset_xr_formatting
@@ -29,10 +30,26 @@ class Outputs:
                     ds = dataset_xr_formatting(ds, original_time_format)
                     start = ds.time.dt.year.values[0]
                     end = ds.time.dt.year.values[-1]
+                    print(ds)
                     ds.to_netcdf(self.dataset_path / f'outputs_{simu}_{start}-{end}.nc')
-                
 
-    # TODO : static fonction for var concatenation ? member concatenation, reggrid ?? not the same nb of member per simus
+class Inputs:
+    def __init__(self,
+                 files_dict,
+                 dataset_path):
+        self.files_dict = files_dict
+        self.dataset_path = Path(dataset_path)
+
+    def build_dataset(self, original_time_format="%Y"):
+        for simu, files in self.files_dict.items():
+            ds = xr.open_dataset(files)
+            print(ds.time.values)
+            ds = dataset_xr_formatting(ds, original_time_format, priority_dims=['time', 'lat', 'lon'])
+            print(ds.time.values)
+            #ds.to_netcdf(self.dataset_path / f'inputs_{simu}_regrid2.nc')
+ 
+
+# TODO : static fonction for var concatenation ? member concatenation, reggrid ?? not the same nb of member per simus
 
 
 def mpi_esm1_2_lr_annual_outputs_formatting(ds):
@@ -73,14 +90,10 @@ if __name__ == "__main__":
     # TODO : add argparse for dataset_path or list path et output ou inputs !!!
 
     DATASET_PATH = Path('/scratch/globc/garcia/scenarIA/datasets/MPI-ESM1-2-LR/annual/')
-
-    ds_target = xr.open_dataset('/gpfs-calypso/scratch/globc/garcia/scenarIA/datasets/MPI-ESM1-2-LR/annual/outputs_ssp126.nc')
-    #baseline_pr = baseline_pr.rename({'lon':'longitude', 'lat':'latitude'})
-    exps = ['hist-GHG', 'hist-aer','ssp126', 'ssp245', 'ssp370', 'ssp585', 'historical']
-    print(ds_target.lat)
-    for exp in exps:
-        file = DATASET_PATH / f'inputs_{exp}.nc'
-        ds = xr.open_dataset(file)
-        print(exp)
-        ds = regrid_inputs_to_outputs(ds, ds_target)
-        ds.to_netcdf(DATASET_PATH / f'inputs_{exp}_regrid.nc')
+    simus = ['historical', 'ssp126', 'ssp245', 'ssp370', 'ssp585', 'hist-aer', 'hist-GHG']
+    files_dict = {}
+    for simu in simus:
+        files_dict[simu] = glob.glob(str(DATASET_PATH / f'inputs_{simu}_regrid2.nc'))[0]
+    print(files_dict)
+    input = Inputs(files_dict, dataset_path=DATASET_PATH)
+    input.build_dataset()

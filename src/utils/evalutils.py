@@ -9,7 +9,7 @@ import torch
 from scenarIA.src.utils.datautils import weighted_global_mean, apply_moving_average, get_statistics_from_bootstrap
 from scenarIA.src.utils.metrics import NRMSE_ClimateBench, NRMSE_g_ClimateBench, NRMSE_s_ClimateBench
 from scenarIA.src.utils.settings import CONFIG_DIR, GRAPHS_DIR, RUNS_DIR, DATASET_DIR
-from scenarIA.src.utils.plotutils import plot_map_image
+from scenarIA.src.utils.plotutils import plot_map_image, plot_map_contour
 
 class EvaluationPlots():
     """Class for plotting evaluation metrics for 2D times series data.
@@ -312,9 +312,8 @@ class EvaluationPlots():
             plt.show()
 
 
-def compare_temporal_profiles(y, y_hat_dict, t, var_name, point=None, window_size:int=None, config_plots=None, title=None, save_dir=None):
+def compare_temporal_profiles(y, y_hat_dict, t, var_name, lats, point=None, window_size:int=None, config_plots=None, title=None, save_dir=None):
 
-    lats = np.linspace(-90, 90, y.shape[-2])
     unit = config_plots[var_name]['unit'] if config_plots else ''
 
     if point:
@@ -361,6 +360,16 @@ def compare_temporal_profiles(y, y_hat_dict, t, var_name, point=None, window_siz
     plt.savefig(save_dir)
 
 def compare_metrics(y, y_hat_dict, var_name, lats=None, title=None, save_dir=None):
+    '''
+    Plot bar charts comparing metrics (NRMSE, sRMSE, gRMSE) for different tests. with confidence intervals if multiple runs are provided.
+
+    y: np.array of shape (time, lat, lon)
+    y_hat_dict: dict of {test_name: list of np.array of shape (time, lat, lon)}. The list can contain one or more arrays (e.g. for ensemble members or bootstrap samples).
+    var_name: name of the variable (e.g. 'tas')
+    lats: np.array of shape (lat,) containing the latitudes corresponding to the lat dimension of y and y_hat. If None, it is assumed to be equally spaced from -90 to 90.
+    title: title of the plot
+    save_dir: directory to save the plot
+    '''
     lats = np.linspace(-90, 90, y.shape[-2]) if lats is None else lats
     y = y[-21:,:,:]
 
@@ -369,12 +378,12 @@ def compare_metrics(y, y_hat_dict, var_name, lats=None, title=None, save_dir=Non
                    'grmse': {}}
 
     for test, y_hat in y_hat_dict.items(): 
-        if len(y_hat) > 1:
+        if isinstance(y_hat, list) and len(y_hat) > 1:
             y_hat_stack = np.stack(y_hat, axis=0)[:,-21:,:,:]
-            res = get_statistics_from_bootstrap(y_hat_stack, n_bootstrap=1000).bootstrap_distribution
-            res = np.transpose(res, (3, 0, 1, 2))            
-            metric_dict['nrmse'][test] = [NRMSE_ClimateBench(torch.tensor(res[i]), 
-                                                    torch.tensor(y), 
+            res = get_statistics_from_bootstrap(y_hat_stack, n_bootstrap=1000).bootstrap_distribution # shape (time, lat, lon, n_bootstrap)
+            res = np.transpose(res, (3, 0, 1, 2))
+            metric_dict['nrmse'][test] = [NRMSE_ClimateBench(torch.tensor(res[i]),
+                                                    torch.tensor(y),
                                                     torch.tensor(lats)) for i in range(res.shape[0])]
             metric_dict['srmse'][test] = [NRMSE_s_ClimateBench(torch.tensor(res[i]), 
                                                             torch.tensor(y), 
@@ -388,7 +397,7 @@ def compare_metrics(y, y_hat_dict, var_name, lats=None, title=None, save_dir=Non
                                                             weights_normalization='mean') for i in range(res.shape[0])]
         
         else: 
-            y_hat = y_hat[0]
+            y_hat = y_hat[0] if isinstance(y_hat, list) else y_hat
             y_hat_mean = y_hat[-21:,:,:]
             metric_dict['nrmse'][test] = NRMSE_ClimateBench(torch.tensor(y_hat_mean), 
                                                             torch.tensor(y), 

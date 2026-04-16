@@ -82,7 +82,7 @@ class scenarIA(Dataset):
             self.time = [self.time[i] for i in perm]        
         
         print('final inputs shape shuffle', self.inputs.shape)
-        print('final outputs shape shuffle', self.outputs.shape)
+        print('final outputs shape shuffle', self.outputs.shape if self.outputs is not None else None)
         print('time length shuffle', len(self.time), self.time[0])
    
 
@@ -93,25 +93,35 @@ class scenarIA(Dataset):
         inputs = {'simu_name': ds}
         """
         inputs_all = []
+        time_all = []
+        print('input')
+
 
         for simu in self.simus:
-            inputs_xr = xr.open_dataset(self.dataset_path / f'inputs_{simu}_regrid.nc')[self.inputs_var_list]
+            inputs_xr = xr.open_dataset(self.dataset_path / f'inputs_{simu}_regrid2.nc')[self.inputs_var_list]
             if self.data_type == 'test' and self.seq_length > 1:
                 hist_xr = xr.open_dataset(
-                    self.dataset_path / f'inputs_historical_regrid.nc')[self.inputs_var_list]
+                    self.dataset_path / f'inputs_historical_regrid2.nc')[self.inputs_var_list]
                 inputs_xr = xr.concat([hist_xr.isel(time=slice(-self.seq_length+1, None)), inputs_xr], dim='time')
 
             for _ in range(self.nb_subsets if self.one_to_many else 1):
-                inputs, _ = scenarIA.build_sequence_array_from_xr(
+                inputs, time = scenarIA.build_sequence_array_from_xr(
                     inputs_xr,
                     seq_length=self.seq_length,
                     predict_only_last_timestep=False,
                     moving_window=self.moving_window
                 )
                 inputs_all.append(inputs)
+                time_all += time
+
 
         inputs_concat = np.concatenate(inputs_all, axis=0) if len(inputs_all) > 0 else np.array([])
         self.inputs = inputs_concat
+        if self.data_type == 'inference':
+            self.time = time_all
+            if self.predict_only_last_timestep:
+                self.time = [t[-1] for t in self.time]
+        #print('input', time_all)
     
     def load_outputs(self):
         """
@@ -123,6 +133,7 @@ class scenarIA(Dataset):
         """
         outputs_all = []
         time_all = []
+        print('output')
 
         for i, simu in enumerate(self.simus):
             outputs_xr_ensemble = xr.open_dataset(self.dataset_path / f'outputs_{simu}.nc')[self.outputs_var_list]
@@ -210,6 +221,7 @@ class scenarIA(Dataset):
             for i in range(0, T - seq_length + 1, step):
                 data_list.append(data[i:i + seq_length, ...])
                 time_list.append(time[i:i + seq_length])
+            print(time_list)
         return np.array(data_list), time_list    
     
     def get_stats(self):
@@ -237,12 +249,11 @@ class scenarIA(Dataset):
             t is either one date value or a list of dates depending on predict_only_last_timestep
         """
         x = self.inputs[idx, ...]
-        y = self.outputs[idx, ...]
-        t64 = self.time[idx]
+        y = self.outputs[idx, ...] if self.outputs is not None else None
+        t64 = self.time[idx] 
         t = torch.tensor([pd.to_datetime(t64).year,
                             pd.to_datetime(t64).month,
                             pd.to_datetime(t64).day])
-
         if self.transform:
             x, y = self.transform((x, y))
             x.float(), y.float()
