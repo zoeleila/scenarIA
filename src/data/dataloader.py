@@ -94,8 +94,6 @@ class scenarIA(Dataset):
         """
         inputs_all = []
         time_all = []
-        print('input')
-
 
         for simu in self.simus:
             inputs_xr = xr.open_dataset(self.dataset_path / f'inputs_{simu}_regrid2.nc')[self.inputs_var_list]
@@ -121,7 +119,7 @@ class scenarIA(Dataset):
             self.time = time_all
             if self.predict_only_last_timestep:
                 self.time = [t[-1] for t in self.time]
-        #print('input', time_all)
+
     
     def load_outputs(self):
         """
@@ -133,7 +131,6 @@ class scenarIA(Dataset):
         """
         outputs_all = []
         time_all = []
-        print('output')
 
         for i, simu in enumerate(self.simus):
             outputs_xr_ensemble = xr.open_dataset(self.dataset_path / f'outputs_{simu}.nc')[self.outputs_var_list]
@@ -221,7 +218,6 @@ class scenarIA(Dataset):
             for i in range(0, T - seq_length + 1, step):
                 data_list.append(data[i:i + seq_length, ...])
                 time_list.append(time[i:i + seq_length])
-            print(time_list)
         return np.array(data_list), time_list    
     
     def get_stats(self):
@@ -256,6 +252,7 @@ class scenarIA(Dataset):
                             pd.to_datetime(t64).day])
         if self.transform:
             x, y = self.transform((x, y))
+            print('hjfegrregiefgiurg',weighted_global_mean(y.numpy().squeeze(), lats=np.linspace(-90, 90, y.shape[-2])))
             x.float(), y.float()
         return x, y, t # TODO : return scenario name !!!!!!!!!!
 

@@ -162,34 +162,36 @@ def compute_weights_from_lats(lats, deg2rad=True, weights_normalization='sum'):
             weights = np.cos((np.pi * lats) / 180)
         else:
             weights = np.cos(lats)
-        weights = weights[:, np.newaxis]
     elif isinstance(lats, torch.Tensor):
         if deg2rad:
             weights = torch.cos((torch.pi * lats) / 180)
         else:
             weights = torch.cos(lats)
-        weights = weights[:, None] 
     elif isinstance(lats, xr.DataArray):
         if deg2rad:
             weights = np.cos(np.deg2rad(lats))
         else:
             weights = np.cos(lats)
+        
     if weights_normalization == 'sum':
         weights = weights / weights.sum() # attention, NRMSE_ClimateBench pas de normalisation des po
     elif weights_normalization == 'mean':
         weights = weights / weights.mean() # attention, NRMSE_ClimateBench pas de normalisation des po
+    print('first wights', weights)
     return weights
 
 def weighted_global_mean(data, lats=None, deg2rad=True, weights_normalization='sum'):
     if isinstance(data, np.ndarray):
         assert lats.shape[0] == data.shape[-2], "Latitude dimension does not match data shape."
         weights = compute_weights_from_lats(lats, deg2rad=deg2rad, weights_normalization=weights_normalization)
-        data = np.mean(data * weights, axis=(-2, -1))
+        data = np.average(data, axis=-2, weights=weights)
+        data = np.mean(data, axis=-1)
 
     elif isinstance(data, torch.Tensor):
         assert lats.shape[0] == data.shape[-2], "Latitude dimension does not match data shape."
         weights = compute_weights_from_lats(lats, deg2rad=deg2rad, weights_normalization=weights_normalization)
-        data = torch.mean(data * weights, dim=(-2, -1))
+        data = torch.mean(data, dim=-2, weights=weights)
+        data = torch.mean(data, dim=-1)
 
     elif isinstance(data, xr.Dataset) or isinstance(data, xr.DataArray):
         data = standardize_dims_and_coords(data)

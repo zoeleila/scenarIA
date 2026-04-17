@@ -323,7 +323,7 @@ def compare_temporal_profiles(y, y_hat_dict, t, var_name, lats, point=None, wind
     vmin = y.min()*0.8 if (y.min() > 0) else y.min()*1.2
     vmax = y.max()*0.8 if (y.max() < 0) else y.max()*1.2
 
-    plt.figure(figsize=(6,4))
+    plt.figure(figsize=(8,5))
     for test, y_hat in y_hat_dict.items():
         if len(y_hat) > 1:
             y_hat = np.stack(y_hat, axis=0)
@@ -357,7 +357,8 @@ def compare_temporal_profiles(y, y_hat_dict, t, var_name, lats, point=None, wind
     plt.ylabel(f'{var_name} {unit}')
     plt.legend()
     plt.title(title)
-    plt.savefig(save_dir)
+    tests_str = '_'.join(y_hat_dict.keys())
+    plt.savefig(save_dir / f'{title}_temporal_profiles_{var_name}_{tests_str}.png')
 
 def compare_metrics(y, y_hat_dict, var_name, lats=None, title=None, save_dir=None):
     '''
@@ -434,7 +435,89 @@ def compare_metrics(y, y_hat_dict, var_name, lats=None, title=None, save_dir=Non
         plt.grid(axis='y', alpha=0.5)
         plt.title(title)
         plt.ylabel(f'{var_name} {metric}') # TODO add unit if unit
-        plt.savefig(save_dir / f'{metric}_bar_plot_{var_name}.png')
+        plt.savefig(save_dir / f'{title}_{metric}_bar_plot_{var_name}.png')
+
+def compare_metrics2(y, y_hat_dict, var_name, lats=None, title=None, save_dir=None,
+                    ensemble_scoring='bootstrap_mean'):
+    '''
+    Plot bar charts comparing metrics (NRMSE, sRMSE, gRMSE) for different tests.
+
+    y: np.array of shape (time, lat, lon)
+    y_hat_dict: dict of {test_name: list of np.array of shape (time, lat, lon)}
+    var_name: name of the variable (e.g. 'tas')
+    lats: np.array of shape (lat,) containing the latitudes. If None, equally spaced from -90 to 90.
+    title: title of the plot
+    save_dir: directory to save the plot
+    ensemble_scoring: str, how to handle ensemble members when len(y_hat) > 1:
+        - 'bootstrap_mean' : bootstrap sur la moyenne des membres (comportement actuel)
+        - 'mean_of_scores' : calcule le score de chaque membre individuellement, 
+                             retourne moyenne + IC 95% inter-membres
+    '''
+    lats = np.linspace(-90, 90, y.shape[-2]) if lats is None else lats
+    y = y[-21:, :, :]
+
+    metric_fns = {
+        'nrmse': lambda yh: NRMSE_ClimateBench(torch.tensor(yh), torch.tensor(y), torch.tensor(lats)),
+        'srmse': lambda yh: NRMSE_s_ClimateBench(torch.tensor(yh), torch.tensor(y), torch.tensor(lats),
+                                                  normalize=False, weights_normalization='mean'),
+        'grmse': lambda yh: NRMSE_g_ClimateBench(torch.tensor(yh), torch.tensor(y), torch.tensor(lats),
+                                                  normalize=False, weights_normalization='mean'),
+    }
+
+    metric_dict = {m: {} for m in metric_fns}
+
+    for test, y_hat in y_hat_dict.items():
+        is_ensemble = isinstance(y_hat, list) and len(y_hat) > 1
+
+        if is_ensemble:
+            y_hat_stack = np.stack(y_hat, axis=0)[:, -21:, :, :]  # (n_members, time, lat, lon)
+
+            if ensemble_scoring == 'bootstrap_mean':
+                # Comportement actuel : bootstrap sur la moyenne des membres
+                res = get_statistics_from_bootstrap(y_hat_stack, n_bootstrap=1000).bootstrap_distribution
+                res = np.transpose(res, (3, 0, 1, 2))  # (n_bootstrap, time, lat, lon)
+                for metric, fn in metric_fns.items():
+                    metric_dict[metric][test] = [fn(res[i]) for i in range(res.shape[0])]
+
+            elif ensemble_scoring == 'mean_of_scores':
+                # Nouveau cas : score de chaque membre individuellement
+                for metric, fn in metric_fns.items():
+                    metric_dict[metric][test] = [fn(y_hat_stack[i]) for i in range(y_hat_stack.shape[0])]
+
+        else:
+            # Cas single member : inchangé
+            y_hat_single = (y_hat[0] if isinstance(y_hat, list) else y_hat)[-21:, :, :]
+            for metric, fn in metric_fns.items():
+                metric_dict[metric][test] = fn(y_hat_single)
+
+    # --- Plotting ---
+    for metric in metric_dict:
+        test_names = list(metric_dict[metric].keys())
+        is_list = isinstance(metric_dict[metric][test_names[0]], list)
+
+        if is_list:
+            metrics_values_mean  = [torch.tensor(metric_dict[metric][t]).mean().item()             for t in test_names]
+            metrics_values_lower = [torch.tensor(metric_dict[metric][t]).quantile(0.025).item()    for t in test_names]
+            metrics_values_upper = [torch.tensor(metric_dict[metric][t]).quantile(0.975).item()    for t in test_names]
+            print(f'{test_names} = {metrics_values_mean} with 95% CI [{metrics_values_lower}, {metrics_values_upper}]')
+        else:
+            metrics_values_mean = [metric_dict[metric][t].item() for t in test_names]
+            print(f'{test_names} = {metrics_values_mean}')
+
+        plt.figure(figsize=(8, 4))
+        if is_list:
+            plt.bar(test_names, metrics_values_mean,
+                    yerr=[np.array(metrics_values_mean) - np.array(metrics_values_lower),
+                          np.array(metrics_values_upper) - np.array(metrics_values_mean)],
+                    capsize=5)
+        else:
+            plt.bar(test_names, metrics_values_mean)
+
+        plt.grid(axis='y', alpha=0.5)
+        plt.title(f'{title} {ensemble_scoring}' if is_list else title)
+        plt.ylabel(f'{var_name} {metric}')
+        plt.savefig(save_dir / f'{title}_{metric}_bar_plot_{var_name}_{ensemble_scoring}.png' if is_list 
+                    else save_dir / f'{title}_{metric}_bar_plot_{var_name}.png')
 
 def compare_metrics_single_runs(y, y_hat_dict, var_name, lats=None, title=None, save_dir=None):
     lats = np.linspace(-90, 90, y.shape[-2]) if lats is None else lats
@@ -469,7 +552,7 @@ def compare_metrics_single_runs(y, y_hat_dict, var_name, lats=None, title=None, 
         plt.grid(axis='y', alpha=0.5)
         plt.title(title)
         plt.ylabel(f'{var_name} {metric}') # TODO add unit if unit
-        plt.savefig(save_dir / f'{metric}_box_plot_{var_name}.png')
+        plt.savefig(save_dir / f'{title}_{metric}_box_plot_{var_name}.png')
 
 
 def compare_metric_maps(y, y_hat_dict, t, var_name,
@@ -534,8 +617,6 @@ def compare_metric_maps(y, y_hat_dict, t, var_name,
                     cmap=cmap,
                     norm=cnorm,
                     levels=levels,
-                    vmin=vmin,
-                    vmax=vmax,
                     extent=[0., 360., -90., 90.],
                     extend='both'
                     )
@@ -585,7 +666,7 @@ def compare_metric_maps2(y, y_hat_dict, t, var_name,
     '''
 
     config_plots = config_plots[var_name] if config_plots else None
-    metrics = ['rmse', 'mean_error']
+    metrics = ['rmse', 'mean_error', 'std']
 
     for metric in metrics:
         cnorm = None
@@ -619,40 +700,39 @@ def compare_metric_maps2(y, y_hat_dict, t, var_name,
                 y_hat = y_hat_dict[test]
                 if len(y_hat) > 1:
                     y_hat = np.stack(y_hat, axis=0)
-                    y_hat[:, :, 0, :] = y[:, 0, :] # to remove after
-                    y_hat[:, :, -1, :] = y[:, -1, :] # to remove after
                     y_hat_p = y_hat[:, mask, :, :]
                     
                     ####
                     # calculate robustness mask based on 95% confidence interval from bootstrap
-                    if metric == 'mean_error':
-                        # bootstrap on the mean prediction across ensemble members
-                        y_hat_p_t_mean = y_hat_p.mean(axis=1)
-                        res = get_statistics_from_bootstrap(y_hat_p_t_mean, n_bootstrap=1000)
-                        ci_lower_bootstrap = res.confidence_interval.low
-                        ci_upper_bootstrap = res.confidence_interval.high
+                    
+                    '''
+                    # bootstrap on the mean prediction across ensemble members
+                    # biais significativement non nul
+                    y_hat_p_t_mean = y_hat_p.mean(axis=1)
+                    res = get_statistics_from_bootstrap(y_hat_p_t_mean, n_bootstrap=1000)
+                    ci_lower_bootstrap = res.confidence_interval.low
+                    ci_upper_bootstrap = res.confidence_interval.high
 
-                        plot_map_image(ci_lower_bootstrap, 
-                                    var_desc=var_name,
-                                    cmap=config_plots['cmap']['values'] if config_plots else 'viridis',
-                                    vmin=config_plots['lim']['values'][0] if config_plots else None,
-                                    vmax=config_plots['lim']['values'][1] if config_plots else None,
-                                    title=f'{var_name} Bootstrap quantile 0.025 \n ({test} {start}-{end})', 
-                                    save_dir=save_dir / f'bootstrap_lower_{test}_{start}_{end}.png')
-                        plot_map_image(ci_upper_bootstrap,
-                                    var_desc=var_name,
-                                        cmap=config_plots['cmap']['values'] if config_plots else 'viridis',
-                                        vmin=config_plots['lim']['values'][0] if config_plots else None,
-                                        vmax=config_plots['lim']['values'][1] if config_plots else None,
-                                        title=f'{var_name} Bootstrap quantile 0.975 \n ({test} {start}-{end})', 
-                                        save_dir=save_dir / f'bootstrap_upper_{test}_{start}_{end}.png')
+                    condition = (ci_lower_bootstrap <= y_p.mean(axis=0)) & (y_p.mean(axis=0) <= ci_upper_bootstrap)
+                    mask_robust = np.where(condition, np.nan, 1) # to plot hatching only where condition is not met (i.e. where prediction is not robust)
+                    print(mask_robust.size, mask_robust[~np.isnan(mask_robust)].sum())
+                    '''
+                    # Dispersion entre membres (robustesse du modèle)
+                    spread = y_hat_p.std(axis=0).mean(axis=0)  # (lat, lon)
 
+                    # Biais significatif (ce que tu fais déjà)
+                    mean_pred = y_hat_p.mean(axis=0).mean(axis=0)   # (lat, lon)
+                    mean_obs  = y_p.mean(axis=0)                     # (lat, lon)
+                    bias      = mean_pred - mean_obs
 
-                        condition = (ci_lower_bootstrap <= y_p.mean(axis=0)) & (y_p.mean(axis=0) <= ci_upper_bootstrap)
-                        mask_robust = np.where(condition, np.nan, 1) # to plot hatching only where condition is not met (i.e. where prediction is not robust)
-                        print(mask_robust.size, mask_robust[~np.isnan(mask_robust)].sum())
+                    # Hachures : là où le spread est grand (dispersion > seuil)
+                    spread_threshold = np.percentile(spread, 75)  # par exemple
+                    mask_spread = np.where(spread > spread_threshold, 1, np.nan)
+                    mask_robust = mask_spread
+                    print(mask_robust.size, mask_robust[~np.isnan(mask_robust)].sum())
 
                     y_hat_p = y_hat_p.mean(axis=0)
+
                 else:
                     y_hat = y_hat[0]
                     y_hat_p = y_hat[mask]
@@ -662,6 +742,13 @@ def compare_metric_maps2(y, y_hat_dict, t, var_name,
 
                 elif metric == 'mean_error':
                     map = np.mean(y_hat_p, axis=0) - y_p.mean(axis=0)
+                
+                elif metric == 'std':
+                    if len(y_hat) > 1:
+                        map = spread
+                    else:
+                        map = np.zeros_like(y_hat_p[0])
+                
 
                 ax = axes[i, j]
 
@@ -669,13 +756,11 @@ def compare_metric_maps2(y, y_hat_dict, t, var_name,
                                 transform=ccrs.PlateCarree(),
                                 cmap=cmap,
                                 norm=cnorm,
-                                levels=levels,
-                                vmin=vmin,
-                                vmax=vmax,
+                                #levels=levels,
                                 extent=[0., 360., -90., 90.],
                                 extend='both')
-                if metric == 'mean_error':
-                    # Hachurer les points de grille en dehors de l'intervalle de confiance à 95%
+                if metric in ['rmse', 'mean_error'] and len(y_hat) > 1:
+                # Hachurer les points de grille en dehors de l'intervalle de confiance à 95%
                     ax.contourf(mask_robust, colors='none', hatches=['///'], transform=ccrs.PlateCarree(), extent=[0., 360., -90., 90.])
                 
                 ax.add_feature(cfeature.COASTLINE, linewidth=0.8, alpha=0.7)
@@ -700,7 +785,7 @@ def compare_metric_maps2(y, y_hat_dict, t, var_name,
         cbar.set_label(f"{metric} {var_name}", fontsize=14)
         plt.subplots_adjust(hspace=0, wspace=0.05, right=0.88)
         tests_str = "_".join(tests)
-        plt.savefig(save_dir / f'{metric}_maps_{var_name}_{tests_str}.png')
+        plt.savefig(save_dir / f'{title}_{metric}_maps_{var_name}_{tests_str}.png')
 
 if __name__ == "__main__":
     y = np.random.rand(100, 96, 192)  # (time, lat, lon)

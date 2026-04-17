@@ -41,9 +41,6 @@ def predict(run_dir,
     if data_type == 'test':
         y_all = torch.cat(y_all, dim=0).squeeze().numpy()
         t_all = torch.cat(t_all, dim=0).numpy()
-        print(t_all)
-        for year, month, day, *_ in t_all:
-            print(year, month, day)
         t_all = np.array([np.datetime64(datetime(year, month, day)) for year, month, day, *_ in t_all])
         t_all = pd.to_datetime(t_all, format="%Y-%m-%d")
         return y_hat_all, y_all, t_all

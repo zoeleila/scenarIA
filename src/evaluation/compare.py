@@ -6,6 +6,7 @@ import torch
 from tqdm import tqdm
 import numpy as np
 from datetime import datetime
+import matplotlib.pyplot as plt
 import argparse
 import pandas as pd
 
@@ -14,6 +15,7 @@ from scenarIA.src.data.dataloader import get_dataloaders, get_climatology
 from scenarIA.src.data.lightning_module import scenarIALightningModule
 from scenarIA.src.utils.evalutils import EvaluationPlots, compare_metric_maps2, compare_metric_maps,compare_metrics, compare_temporal_profiles
 from scenarIA.src.predict import predict
+from scenarIA.src.utils.datautils import weighted_global_mean
 
 def compare(runs_dict, 
             simus_test=None,    
@@ -31,6 +33,12 @@ def compare(runs_dict,
             print(run_dir)
             if i == 0 and seed_ixd == 0: # only for the first run, to get the true values and time
                 y_hat_all, y_all, t_all = predict(run_dir, data_type='test', simus_to_predict=simus_test)
+                plt.figure()
+                plt.plot(t_all, weighted_global_mean(y_all, lats=np.linspace(-90, 90, y_all.shape[-2])), label='true')
+                plt.plot(t_all, weighted_global_mean(y_hat_all, lats=np.linspace(-90, 90, y_hat_all.shape[-2])), label='pred')
+                plt.legend()
+                plt.savefig(GRAPHS_DIR/'tests'/'test.png')
+
             else:
                 y_hat_all, _, _ = predict(run_dir, data_type='test', simus_to_predict=simus_test)
             y_hat_all_seeds.append(y_hat_all)
@@ -74,9 +82,8 @@ if __name__=='__main__':
     timescale = runs['timescale']
     exp = runs['exp']
 
-    graph_dir = GRAPHS_DIR / 'tests'
-    # graph_dir = GRAPHS_DIR/f'runs/{model_name}/{timescale}/{exp}'
-    title = args.simus_test + ' (' + runs['model_name'] + ' ' + runs['timescale'] + ' ' + runs['exp'] + ')'
+    graph_dir = GRAPHS_DIR/f'runs/{model_name}/{timescale}/{exp}'
+    title = runs['model_name'] + '_' + runs['timescale'] + '_' + runs['exp'] + '_' + args.simus_test
     
     runs_dict = runs['compare']['runs_to_compare']
     eval_func = EvaluationPlots(config_plots=config_plots, 
@@ -89,10 +96,14 @@ if __name__=='__main__':
                                plot_save_dir=graph_dir)
 
     lats = dict(np.load(DATASET_DIR / model_name / timescale / 'coords.npz', allow_pickle=True))['lat']
-    #compare_metrics(y, y_hat_dict, lats=lats, var_name=var_name, title=None, save_dir=graph_dir)
+    #compare_metrics2(y, y_hat_dict, lats=lats, var_name=var_name, title=None, save_dir=graph_dir, 
+    # ensemble_scoring='bootstrap_mean')
+    #compare_metrics2(y, y_hat_dict, lats=lats, var_name=var_name, title=None, save_dir=graph_dir, 
+    # ensemble_scoring='mean_of_scores')
     compare_temporal_profiles(y, y_hat_dict, t, var_name=var_name, lats=lats, config_plots=config_plots,
                               title=title, 
                               save_dir=graph_dir)
+
     compare_metric_maps2(y, y_hat_dict, t, var_name=var_name, config_plots=config_plots, 
                          title=title, save_dir=graph_dir)
 
