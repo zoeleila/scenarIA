@@ -43,6 +43,11 @@ def run(config):
         mode='min'
     )
 
+    checkpoint_last = ModelCheckpoint(
+    filename='last-{epoch:02d}',
+    save_last=True,       # toujours écrase le précédent
+)
+
     torch.set_float32_matmul_precision('high') # For hybrid partition
 
     trainer = pl.Trainer(max_epochs=config['train']['max_epochs'], 
@@ -52,7 +57,7 @@ def run(config):
                         devices="auto",
                         precision='16-mixed',
                         logger=logger,
-                        callbacks=checkpoint_callback)
+                        callbacks=[checkpoint_callback, checkpoint_last])
 
     trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=val_dataloader)
     trainer.test(model, dataloaders=test_dataloader, ckpt_path='best')

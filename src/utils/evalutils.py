@@ -1,10 +1,11 @@
-from logging import config
+from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import cartopy.crs as ccrs
-import matplotlib.colors as colors
+import matplotlib.colors as mcolors
 import cartopy.feature as cfeature
 import torch
+import pandas as pd
 
 from scenarIA.src.utils.datautils import weighted_global_mean, apply_moving_average, get_statistics_from_bootstrap
 from scenarIA.src.utils.metrics import NRMSE_ClimateBench, NRMSE_g_ClimateBench, NRMSE_s_ClimateBench
@@ -438,7 +439,7 @@ def compare_metrics(y, y_hat_dict, var_name, lats=None, title=None, save_dir=Non
         plt.savefig(save_dir / f'{title}_{metric}_bar_plot_{var_name}.png')
 
 def compare_metrics2(y, y_hat_dict, var_name, lats=None, title=None, save_dir=None,
-                    ensemble_scoring='bootstrap_mean'):
+                    ensemble_scoring='scores_of_bootstrap_mean'):
     '''
     Plot bar charts comparing metrics (NRMSE, sRMSE, gRMSE) for different tests.
 
@@ -449,7 +450,7 @@ def compare_metrics2(y, y_hat_dict, var_name, lats=None, title=None, save_dir=No
     title: title of the plot
     save_dir: directory to save the plot
     ensemble_scoring: str, how to handle ensemble members when len(y_hat) > 1:
-        - 'bootstrap_mean' : bootstrap sur la moyenne des membres (comportement actuel)
+        - 'scores_of_bootstrap_mean' : bootstrap sur la moyenne des membres (comportement actuel)
         - 'mean_of_scores' : calcule le score de chaque membre individuellement, 
                              retourne moyenne + IC 95% inter-membres
     '''
@@ -459,9 +460,9 @@ def compare_metrics2(y, y_hat_dict, var_name, lats=None, title=None, save_dir=No
     metric_fns = {
         'nrmse': lambda yh: NRMSE_ClimateBench(torch.tensor(yh), torch.tensor(y), torch.tensor(lats)),
         'srmse': lambda yh: NRMSE_s_ClimateBench(torch.tensor(yh), torch.tensor(y), torch.tensor(lats),
-                                                  normalize=False, weights_normalization='mean'),
+                                                  normalize=False, weights_normalization='sum'),
         'grmse': lambda yh: NRMSE_g_ClimateBench(torch.tensor(yh), torch.tensor(y), torch.tensor(lats),
-                                                  normalize=False, weights_normalization='mean'),
+                                                  normalize=False, weights_normalization='sum'),
     }
 
     metric_dict = {m: {} for m in metric_fns}
@@ -472,7 +473,7 @@ def compare_metrics2(y, y_hat_dict, var_name, lats=None, title=None, save_dir=No
         if is_ensemble:
             y_hat_stack = np.stack(y_hat, axis=0)[:, -21:, :, :]  # (n_members, time, lat, lon)
 
-            if ensemble_scoring == 'bootstrap_mean':
+            if ensemble_scoring == 'scores_of_bootstrap_mean':
                 # Comportement actuel : bootstrap sur la moyenne des membres
                 res = get_statistics_from_bootstrap(y_hat_stack, n_bootstrap=1000).bootstrap_distribution
                 res = np.transpose(res, (3, 0, 1, 2))  # (n_bootstrap, time, lat, lon)
@@ -555,97 +556,6 @@ def compare_metrics_single_runs(y, y_hat_dict, var_name, lats=None, title=None, 
         plt.savefig(save_dir / f'{title}_{metric}_box_plot_{var_name}.png')
 
 
-def compare_metric_maps(y, y_hat_dict, t, var_name,
-                      periods=[['2020', '2050'],['2070', '2100']],
-                      config_plots=None,
-                      title=None,
-                      save_dir=None):
-    tests = list(y_hat_dict.keys())
-    n_tests = len(tests)
-    n_periods = len(periods)
-
-    for test, y_hat in y_hat_dict.items():
-        if len(y_hat) > 1:
-            y_hat = np.stack(y_hat, axis=0)
-            y_hat_dict[test] = y_hat.mean(axis=0)
-            
-        else:
-            y_hat_dict[test] = y_hat[0]
-    config_plots = config_plots[var_name] if config_plots else None
-    metrics = ['rmse', 'mean_error']
-    
-    for metric in metrics:
-        cnorm = None
-        if config_plots:          
-            vmin = config_plots['lim'][metric][0]
-            vmax = config_plots['lim'][metric][1]
-            levels = np.linspace(vmin, vmax, 11)
-            cmap = config_plots['cmap'][metric]
-            if cmap == 'coolwarm':
-                levels=np.linspace(vmin, vmax, 8)
-        else:
-            vmin, vmax = None, None
-            levels = None
-            cmap = 'viridis'
-
-        fig, axes = plt.subplots(n_periods, n_tests,
-                                figsize=(3*n_tests, 2*n_periods),
-                                subplot_kw={'projection': ccrs.Robinson()},
-                                squeeze=False)
-        plt.suptitle(title)
-
-        for i, (start, end) in enumerate(periods):
-            start_date = np.datetime64(f"{start}-01-01")
-            end_date   = np.datetime64(f"{end}-12-31")
-            mask = (t >= start_date) & (t <= end_date)
-
-            for j, test in enumerate(tests):
-                y_hat = y_hat_dict[test]
-            
-                y_p = y[mask]
-                y_hat_p = y_hat[mask]
-
-                if metric == 'rmse':
-                    map = np.sqrt(np.mean((y_p - y_hat_p)**2, axis=0))
-
-                elif metric == 'mean_error':
-                    map = np.mean(y_hat_p - y_p, axis=0)
-
-                ax = axes[i, j]
-                cs = ax.contourf(map,
-                    transform=ccrs.PlateCarree(),
-                    cmap=cmap,
-                    norm=cnorm,
-                    levels=levels,
-                    extent=[0., 360., -90., 90.],
-                    extend='both'
-                    )
-
-                ax.add_feature(cfeature.COASTLINE, linewidth=0.8, alpha=0.7)
-
-                if i == 0:
-                    ax.set_title(test, fontsize=11)
-                if j == 0:
-                    ax.text(-0.10, 0.5, f"{start}-{end}",
-                            transform=ax.transAxes,
-                            rotation=90,
-                            va='center',
-                            ha='right',
-                            fontsize=11,
-                            fontweight='bold')
-
-        cbar_ax = fig.add_axes([0.90, 0.2, 0.02, 0.6])
-        cbar = fig.colorbar(cs, cax=cbar_ax)
-        if levels is not None:
-            cbar.set_ticks(np.linspace(vmin, vmax, 5))
-            cbar.set_ticklabels([str(round(float(i), 1)) for i in np.linspace(vmin, vmax, 5)])
-
-        cbar.set_label(f"{metric} {var_name}")
-        plt.subplots_adjust(hspace=0, wspace=0.05, right=0.88)
-        tests_str = "_".join(tests)
-        plt.savefig(save_dir / 'test.png')
-        #plt.savefig(save_dir / f'{metric}_maps_{var_name}_{tests_str}.png')
-
 def compare_metric_maps2(y, y_hat_dict, t, var_name,
                         periods=[['2020', '2050'], ['2070', '2100']],
                         config_plots=None,
@@ -674,6 +584,7 @@ def compare_metric_maps2(y, y_hat_dict, t, var_name,
             vmin = config_plots['lim'][metric][0]
             vmax = config_plots['lim'][metric][1]
             levels = np.linspace(vmin, vmax, 11)
+            
             cmap = config_plots['cmap'][metric]
             if cmap == 'coolwarm':
                 levels = np.linspace(vmin, vmax, 8)
@@ -755,14 +666,17 @@ def compare_metric_maps2(y, y_hat_dict, t, var_name,
                 cs = ax.contourf(map,
                                 transform=ccrs.PlateCarree(),
                                 cmap=cmap,
-                                norm=cnorm,
-                                #levels=levels,
-                                extent=[0., 360., -90., 90.],
-                                extend='both')
+                                vmin=vmin,
+                                vmax=vmax,
+                                levels=levels,
+                                extend='both',
+                                extent=[0., 360., -90., 90.])
+                
                 if metric in ['rmse', 'mean_error'] and len(y_hat) > 1:
                 # Hachurer les points de grille en dehors de l'intervalle de confiance à 95%
-                    ax.contourf(mask_robust, colors='none', hatches=['///'], transform=ccrs.PlateCarree(), extent=[0., 360., -90., 90.])
-                
+                    ax.contourf(mask_robust, colors='none', hatches=['///'], 
+                                transform=ccrs.PlateCarree(),
+                                extent=[0., 360., -90., 90.], zorder=10)
                 ax.add_feature(cfeature.COASTLINE, linewidth=0.8, alpha=0.7)
 
                 if i == 0:
@@ -777,7 +691,7 @@ def compare_metric_maps2(y, y_hat_dict, t, var_name,
                             fontweight='bold')
 
         cbar_ax = fig.add_axes([0.90, 0.2, 0.02, 0.6])
-        cbar = fig.colorbar(cs, cax=cbar_ax)
+        cbar = fig.colorbar(cs, cax=cbar_ax, extend='both')
         if levels is not None:
             cbar.set_ticks(np.linspace(vmin, vmax, 5))
             cbar.set_ticklabels([str(round(float(i), 1)) for i in np.linspace(vmin, vmax, 5)], fontsize=14)
@@ -787,13 +701,21 @@ def compare_metric_maps2(y, y_hat_dict, t, var_name,
         tests_str = "_".join(tests)
         plt.savefig(save_dir / f'{title}_{metric}_maps_{var_name}_{tests_str}.png')
 
+
+def compare_df_metrics(df, test_name, metric_name, title=None, save_dir=None):
+    ax = df.plot.bar(x=test_name, y=metric_name, legend=False, rot=30, figsize=(10,6))
+    ax.set_ylabel(metric_name)
+    if title:
+        ax.set_title(title)
+    plt.savefig(save_dir / f'{title}_{metric_name}_barplot.png')
+
 if __name__ == "__main__":
-    y = np.random.rand(100, 96, 192)  # (time, lat, lon)
-    y_hat_dict = {
-        'test1': [np.random.rand(100, 96, 192) for _ in range(6)],  # 6 ensemble members
-        'test2': [np.random.rand(100, 96, 192) for _ in range(6)],
-        'test3': [np.random.rand(100, 96, 192) for _ in range(6)]
-    }
-    t = np.array([np.datetime64(f"{2000+i}-01-01") for i in range(100)])
-    compare_metric_maps2(y, y_hat_dict, t, var_name='tas', title='Test Metric Maps', 
-                        save_dir=GRAPHS_DIR)
+    run_dir = Path('/scratch/globc/garcia/scenarIA/runs/MPI-ESM1-2-LR/annual/exp1/tas_cnn-lstm_seed42_seq10_mem30_sub1')
+    file = run_dir / 'compare_versions_metrics_last_epoch.csv'
+    df = pd.read_csv(file)
+    # remove max_epoch == 30
+    df = df[df['max_epochs'] != 30]
+    print(df)
+    for metric in ['nrmse', 'srmse', 'grmse', 'nsrmse', 'ngrmse']:
+        compare_df_metrics(df, test_name='version', metric_name=metric, title='tas_cnn-lstm_seed42_seq10_mem30_sub1',
+                           save_dir=run_dir)

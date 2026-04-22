@@ -21,7 +21,7 @@ def NRMSE_s_ClimateBench(y_hat: torch.Tensor, y: torch.Tensor, lats: torch.Tenso
         )
     ) 
     if normalize:
-        nrmse_s = nrmse_s / torch.abs(weighted_global_mean(y, lats, weights_normalization=weights_normalization).mean(axis=0))
+        nrmse_s = nrmse_s / torch.abs(weighted_global_mean(y.mean(axis=0), lats, weights_normalization=weights_normalization))
 
     return nrmse_s
 
@@ -40,7 +40,7 @@ def NRMSE_g_ClimateBench(y_hat: torch.Tensor, y: torch.Tensor, lats: torch.Tenso
             ).mean(axis=0)
         )
     if normalize:
-        nrmse_g = nrmse_g / torch.abs(weighted_global_mean(y, lats, weights_normalization=weights_normalization).mean(axis=0))
+        nrmse_g = nrmse_g / torch.abs(weighted_global_mean(y.mean(axis=0), lats, weights_normalization=weights_normalization))
 
     return nrmse_g
 

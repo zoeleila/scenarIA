@@ -14,8 +14,12 @@ from scenarIA.src.data.lightning_module import scenarIALightningModule
 
 def predict(run_dir,
             data_type='test',
-            simus_to_predict=None):
-    checkpoint_dir = glob.glob(str(RUNS_DIR / run_dir / 'checkpoints/best-checkpoint*.ckpt'))[0]
+            simus_to_predict=None,
+            best_checkpoint=True):
+    if best_checkpoint:
+        checkpoint_dir = glob.glob(str(RUNS_DIR / run_dir / 'checkpoints/best-checkpoint*.ckpt'))[0]
+    else:
+        checkpoint_dir = glob.glob(str(RUNS_DIR / run_dir / 'checkpoints/last.ckpt'))[0]
     model = scenarIALightningModule.load_from_checkpoint(checkpoint_dir, map_location='cpu')
     model.eval()
     hparams = model.hparams['config']
@@ -25,8 +29,7 @@ def predict(run_dir,
     y_hat_all = []
     y_all = [] if data_type == 'test' else None
     t_all = [] if data_type == 'test' else None
-    print(dataloader)
-    for batch in tqdm(dataloader, desc="Computing stats from dataloader"):
+    for batch in tqdm(dataloader, desc="Computing stats from dataloader", disable=True):
         if data_type == 'inference':
             x, _, _ = batch
         elif data_type == 'test':
@@ -43,9 +46,9 @@ def predict(run_dir,
         t_all = torch.cat(t_all, dim=0).numpy()
         t_all = np.array([np.datetime64(datetime(year, month, day)) for year, month, day, *_ in t_all])
         t_all = pd.to_datetime(t_all, format="%Y-%m-%d")
-        return y_hat_all, y_all, t_all
+        return y_hat_all, y_all, t_all, hparams
     elif data_type == 'inference':
-        return y_hat_all, None, t_all
+        return y_hat_all, None, t_all, hparams
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description="Predict with trained models")

@@ -40,8 +40,13 @@ class scenarIALightningModule(pl.LightningModule):
         self.outputs = config['train']['outputs']
         self.inputs = config['train']['inputs']
         self.img_size = config['train']['img_size']
+        self.simus_test = config['train']['simus_test']
         self.scheduler_step_size = config['train']['scheduler_step_size']
         self.scheduler_gamma = config['train']['scheduler_gamma']
+        try:
+            self.lstm_units = config['train']['lstm_units']
+        except KeyError:
+            self.lstm_units = 25
         self.arch = config['train'].get('arch', 'cnn-lstm')
         self.predict_only_last_timestep = config['data']['predict_only_last_timestep']
         os.makedirs(self.runs_dir, exist_ok=True)
@@ -79,7 +84,7 @@ class scenarIALightningModule(pl.LightningModule):
         match self.arch:
             case 'cnn-lstm':
                 self.model = CNNLSTMModel(self.seq_length, height=self.img_size[0], width=self.img_size[1], channels=len(self.inputs),
-                                          output_seq_len=output_seq_len).float()
+                                          output_seq_len=output_seq_len, lstm_units=self.lstm_units).float()
 
     def forward(self, x):
         return self.model(x) 
@@ -197,18 +202,18 @@ class scenarIALightningModule(pl.LightningModule):
         ax.legend()
         self.logger.experiment.add_figure('Figure/test_true_vs_predicted', fig)
 
-        
-        eval = EvaluationPlots(simulation_name='ssp245',# TODO change by returning simu in dataloader get item
+
+        eval = EvaluationPlots(simulation_name=self.simus_test[0],# TODO change by returning simu in dataloader get item
                                var_name=self.outputs[0], # TODO change for multivariate
                                config_plots=self.config_plots)
         start_year = t_all[0, 0]
         end_year = t_all[-1, 0]
         eval.plot_error_maps(y_all.cpu().numpy(), 
                              y_hat_all.cpu().numpy(), 
-                             title=f'ssp245 {start_year}-{end_year}',
+                             title=f'{self.simus_test} {start_year}-{end_year}',
                              save_path=Path(self.logger.log_dir) / 'error_maps.png')
 
     def configure_optimizers(self):
         optimizer = torch.optim.RMSprop(self.parameters(), lr=self.learning_rate)
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=self.scheduler_step_size, gamma=self.scheduler_gamma)
-        return [optimizer], [scheduler]
+        #scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=self.scheduler_step_size, gamma=self.scheduler_gamma)
+        return optimizer

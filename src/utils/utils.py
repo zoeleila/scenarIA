@@ -31,6 +31,7 @@ def test_name_from_config(config:dict) -> str:
     test_name = f'{outputs_str}_{arch}_seed{seed}_seq{seq_length}_mem{nb_member_per_subsets}_sub{nb_subsets}'
     return test_name
 
+
 if __name__=='__main__':
     with open(CONFIG_DIR / 'config.yaml') as file:
         config = yaml.safe_load(file)

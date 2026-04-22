@@ -252,7 +252,6 @@ class scenarIA(Dataset):
                             pd.to_datetime(t64).day])
         if self.transform:
             x, y = self.transform((x, y))
-            print('hjfegrregiefgiurg',weighted_global_mean(y.numpy().squeeze(), lats=np.linspace(-90, 90, y.shape[-2])))
             x.float(), y.float()
         return x, y, t # TODO : return scenario name !!!!!!!!!!
 

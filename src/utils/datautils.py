@@ -177,20 +177,20 @@ def compute_weights_from_lats(lats, deg2rad=True, weights_normalization='sum'):
         weights = weights / weights.sum() # attention, NRMSE_ClimateBench pas de normalisation des po
     elif weights_normalization == 'mean':
         weights = weights / weights.mean() # attention, NRMSE_ClimateBench pas de normalisation des po
-    print('first wights', weights)
     return weights
 
 def weighted_global_mean(data, lats=None, deg2rad=True, weights_normalization='sum'):
     if isinstance(data, np.ndarray):
         assert lats.shape[0] == data.shape[-2], "Latitude dimension does not match data shape."
         weights = compute_weights_from_lats(lats, deg2rad=deg2rad, weights_normalization=weights_normalization)
-        data = np.average(data, axis=-2, weights=weights)
+        data = np.average(data, axis=-2, weights=weights) # division par la somme des poids, pas besoin de normalisation des poids pour la moyenne globale pondérée
         data = np.mean(data, axis=-1)
 
     elif isinstance(data, torch.Tensor):
         assert lats.shape[0] == data.shape[-2], "Latitude dimension does not match data shape."
         weights = compute_weights_from_lats(lats, deg2rad=deg2rad, weights_normalization=weights_normalization)
-        data = torch.mean(data, dim=-2, weights=weights)
+        weights = weights.unsqueeze(-1)
+        data = torch.sum(data * weights, dim=-2)
         data = torch.mean(data, dim=-1)
 
     elif isinstance(data, xr.Dataset) or isinstance(data, xr.DataArray):
