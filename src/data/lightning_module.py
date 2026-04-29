@@ -19,7 +19,7 @@ from torchmetrics import PearsonCorrCoef, MeanSquaredError, MeanAbsoluteError
 
 from scenarIA.src.models.CNNLSTM import CNNLSTMModel
 from scenarIA.src.utils.losses import LLweighted_MSELoss_Climax
-from scenarIA.src.utils.metrics import NRMSE_ClimateBench
+from scenarIA.src.utils.metrics import NRMSE_ClimateBench, LatWeightedRMSEMetric
 from scenarIA.src.utils.datautils import weighted_global_mean
 from scenarIA.src.utils.settings import RUNS_DIR, CONFIG_DIR
 from scenarIA.src.utils.evalutils import EvaluationPlots
@@ -55,11 +55,17 @@ class scenarIALightningModule(pl.LightningModule):
         self.lats = lats.to(device) if lats is not None else torch.linspace(-90, 90, self.img_size[0]).to(device)
         self.loss = LLweighted_MSELoss_Climax(lats=self.lats)
         #self.loss = nn.MSELoss()
+        
+        # Define metrics for test set evaluation
         self.metrics_dict = nn.ModuleDict({
                     "rmse": MeanSquaredError(squared=True),
                     "mae": MeanAbsoluteError()
                 })
         self.spatial_corr_metric = PearsonCorrCoef()
+
+        # hp_metric for hyperparameter optimization, here we choose the validation RMSE
+        self.val_rmse = LatWeightedRMSEMetric()
+        self.best_val_rmse = float('inf')
 
         self.get_model()
         self.test_metrics = {}
@@ -68,8 +74,8 @@ class scenarIALightningModule(pl.LightningModule):
         self.test_step_outputs_true = []
         self.test_step_outputs_hat = []
         self.test_step_times = []
-        
-        self.save_hyperparameters()
+
+        self.save_hyperparameters(ignore=['lats'])
         self.epoch_start_time = None
 
         with open(CONFIG_DIR / 'plots.yaml') as file:
@@ -91,7 +97,7 @@ class scenarIALightningModule(pl.LightningModule):
 
     def on_train_start(self):
         self.logger.experiment.add_custom_scalars(layout)
-        self.logger.log_hyperparams(vars(self.hparams))
+        # self.logger.log_hyperparams(vars(self.hparams))
 
     def on_train_epoch_start(self):
         self.epoch_start_time = time.time()
@@ -123,14 +129,38 @@ class scenarIALightningModule(pl.LightningModule):
         y_hat, loss = self.common_step(x, y)
         self.log('val_loss', loss, on_step=False, on_epoch=True, prog_bar=True)
         self.val_step_outputs.append(loss)
+        self.val_rmse.update(y_hat, y, self.lats)
         return loss
 
     def on_validation_epoch_end(self):
         epoch_average = torch.stack(self.val_step_outputs).mean()
         self.logger.experiment.add_scalar("loss/val", epoch_average, self.current_epoch)
+        rmse = self.val_rmse.compute()
+        self.log('val_rmse', rmse, on_step=False, on_epoch=True)
+        self.val_rmse.reset()
         self.val_step_outputs.clear()
+        if rmse < self.best_val_rmse:
+            self.best_val_rmse = rmse
 
+    def on_fit_end(self):
+        valid_types = (int, float, str, bool, list, tuple)
         
+        flat_hparams = {}
+        config = self.hparams['config']  # niveau 1 : data, train
+        for section_k, section_v in config.items():
+            if isinstance(section_v, dict):  # niveau 2 : les valeurs
+                for k, v in section_v.items():
+                    if isinstance(v, valid_types):
+                        flat_hparams[f"{section_k}/{k}"] = v
+            elif isinstance(section_v, valid_types):
+                flat_hparams[section_k] = section_v
+
+        self.logger.log_hyperparams(
+            flat_hparams,
+            {"hp/val_rmse": self.best_val_rmse}
+        )
+        self.logger.experiment.flush()
+
     def test_step(self, batch, batch_idx):
         x, y, t = batch
         y_hat, loss = self.common_step(x, y)
@@ -188,11 +218,11 @@ class scenarIALightningModule(pl.LightningModule):
         y_hat_all = torch.stack(self.test_step_outputs_hat, axis=0).view(-1, self.img_size[0], self.img_size[1])
         t_all = torch.cat(self.test_step_times).cpu().numpy()
 
-        self.log('hp_metric', NRMSE_ClimateBench(y_hat_all, y_all, self.lats))
+        self.log('test_nrmse', NRMSE_ClimateBench(y_hat_all, y_all, self.lats))
         self.log('loss', df['loss'].mean())
 
         spatial_corr = self.spatial_corr_metric.compute()
-        self.log("hp_metric_corr", spatial_corr)
+        self.log("test_corr", spatial_corr)
         
         fig, ax = plt.subplots()
         ax.plot(weighted_global_mean(y_all, self.lats).cpu().numpy(), label='True')

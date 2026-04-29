@@ -1,6 +1,7 @@
 from ast import parse
 import random
 import numpy as np
+from traitlets import default
 import torch
 import yaml
 import argparse
@@ -34,7 +35,9 @@ def run(config):
 
     model = scenarIALightningModule(config, lats=torch.tensor(lats))
 
-    logger = TensorBoardLogger(save_dir=RUNS_DIR / config['train']['runs_dir'], name='lightning_logs')
+    logger = TensorBoardLogger(save_dir=RUNS_DIR / config['train']['runs_dir'], 
+                               name='lightning_logs',
+                               default_hp_metric=False)
 
     checkpoint_callback = ModelCheckpoint(
         monitor="val_loss", 

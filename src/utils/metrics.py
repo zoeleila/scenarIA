@@ -1,6 +1,7 @@
 from locale import normalize
 import torch
 from scenarIA.src.utils.datautils import compute_weights_from_lats, weighted_global_mean
+from torchmetrics import Metric
 
 
 
@@ -87,6 +88,48 @@ def LLweighted_RMSE_Climax(
     error = torch.sqrt(error)
 
     return error
+
+class LatWeightedRMSEMetric(Metric):
+    """
+    Accumulates weighted squared error and computes the LatWeighted RMSE.
+    Usage:
+        metric = LatWeightedRMSEMetric()
+        metric.update(preds, target, lats, mask=opt_mask)
+        rmse = metric.compute()
+    """
+
+    def __init__(self, dist_sync_on_step: bool = False):
+        super().__init__(dist_sync_on_step=dist_sync_on_step)
+        self.add_state("numerator", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("denom", default=torch.tensor(0.0), dist_reduce_fx="sum")
+
+    def update(self, preds: torch.Tensor, target: torch.Tensor, lats: torch.Tensor, mask: torch.Tensor = None):
+        """
+        preds, target: tensors with same shape (e.g. batch, time, lat, lon)
+        lats: latitude tensor used to compute weights
+        mask: optional mask broadcastable to preds/target (0/1 values)
+        """
+        weights = compute_weights_from_lats(lats)
+        weights = weights.unsqueeze(-1)
+        sq = ((preds - target) ** 2) * weights
+
+        if mask is not None:
+            num = (sq * mask).sum()
+            den = mask.sum()
+        else:
+            num = sq.sum()
+            den = torch.tensor(target.numel(), dtype=num.dtype, device=num.device)
+
+        # ensure tensors are on same device/dtype
+        num = num.to(self.numerator.device)
+        den = den.to(self.denom.device)
+
+        self.numerator += num
+        self.denom += den
+
+    def compute(self):
+        # avoid division by zero
+        return torch.sqrt(self.numerator / (self.denom + 1e-12))
 
 if __name__ == "__main__":
     batch_size = 16

@@ -703,19 +703,23 @@ def compare_metric_maps2(y, y_hat_dict, t, var_name,
 
 
 def compare_df_metrics(df, test_name, metric_name, title=None, save_dir=None):
-    ax = df.plot.bar(x=test_name, y=metric_name, legend=False, rot=30, figsize=(10,6))
+    df = df.sort_values(by=metric_name, ascending=True)
+    ax = df.plot.bar(x=test_name, y=metric_name, legend=False, rot=30, figsize=(16,6))
     ax.set_ylabel(metric_name)
+    ax.bar_label(ax.containers[0], fmt='%.3f', padding=3, fontsize=8)
     if title:
         ax.set_title(title)
     plt.savefig(save_dir / f'{title}_{metric_name}_barplot.png')
 
 if __name__ == "__main__":
-    run_dir = Path('/scratch/globc/garcia/scenarIA/runs/MPI-ESM1-2-LR/annual/exp1/tas_cnn-lstm_seed42_seq10_mem30_sub1')
-    file = run_dir / 'compare_versions_metrics_last_epoch.csv'
+    test = 'pr_cnn-lstm_seed42_seq5_mem50_sub1'
+    run_dir = Path(f'/scratch/globc/garcia/scenarIA/runs/MPI-ESM1-2-LR/annual/exp2/{test}')
+    file = run_dir / 'compare_versions_val_metrics_best_checkpoint.csv'
     df = pd.read_csv(file)
+    print('min val_rmse:', df['val_rmse'].min(), 'for version:', df.loc[df['val_rmse'].idxmin(), 'version'])
     # remove max_epoch == 30
     df = df[df['max_epochs'] != 30]
     print(df)
-    for metric in ['nrmse', 'srmse', 'grmse', 'nsrmse', 'ngrmse']:
-        compare_df_metrics(df, test_name='version', metric_name=metric, title='tas_cnn-lstm_seed42_seq10_mem30_sub1',
+    for metric in ['val_rmse']:
+        compare_df_metrics(df, test_name='version', metric_name=metric, title=test,
                            save_dir=run_dir)

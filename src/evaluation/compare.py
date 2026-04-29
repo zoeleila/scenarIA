@@ -1,5 +1,3 @@
-from ast import arg
-from os import times
 import yaml
 import glob
 import torch
@@ -13,7 +11,7 @@ import pandas as pd
 from scenarIA.src.utils.settings import CONFIG_DIR, GRAPHS_DIR, RUNS_DIR, DATASET_DIR
 from scenarIA.src.utils.evalutils import EvaluationPlots, compare_metric_maps2, compare_metrics2, compare_temporal_profiles
 from scenarIA.src.predict import predict
-from scenarIA.src.utils.metrics import NRMSE_ClimateBench, NRMSE_g_ClimateBench, NRMSE_s_ClimateBench
+from scenarIA.src.utils.metrics import NRMSE_ClimateBench, NRMSE_g_ClimateBench, NRMSE_s_ClimateBench, LatWeightedRMSEMetric
 
 def compare_tests(runs_dict, 
             simus_test=None,    
@@ -56,7 +54,9 @@ def compare_tests(runs_dict,
 
 #def get_plot_path ????
 
-def compare_runs(runs_list, params_list=['learning_rate'], save_dir=None):
+def compare_runs(runs_list, params_list=['learning_rate'], data_type='test', save_dir=None):
+    """Fonction à supprimer"""
+    
     rows = []  # Liste de dicts, une entrée par run
     
     for run_dir in runs_list:
@@ -97,6 +97,74 @@ def compare_runs(runs_list, params_list=['learning_rate'], save_dir=None):
     
     return df
 
+def compare_hp(runs_list, params_list=['learning_rate'], save_dir=None):
+    """ à implémenter directement dans le lightning module ???"""
+    rows = []  # Liste de dicts, une entrée par run
+    val_rmse = LatWeightedRMSEMetric()
+
+    # Prepare CSV path and load existing versions if any
+    csv_path = None
+    existing_versions = set()
+    if save_dir is not None:
+        try:
+            csv_path = save_dir / 'compare_versions_val_metrics_best_checkpoint.csv'
+            if csv_path.exists():
+                df_existing = pd.read_csv(csv_path)
+                if 'version' in df_existing.columns:
+                    existing_versions = set(df_existing['version'].astype(str).tolist())
+        except Exception as e:
+            print(f"Could not read existing CSV: {e}")
+            existing_versions = set()
+
+    for run_dir in runs_list:
+        version = run_dir.split('/')[-1]
+        if version in existing_versions:
+            print(f"{version} already computed, skipping.")
+            continue
+
+        print(version)
+        
+        try:
+            y_hat_all, y_all, _, hparams = predict(run_dir, data_type='val', best_checkpoint=True)
+            if not all(param in hparams['train'] for param in params_list):
+                print(f"Skipping {version}: missing one of params {params_list} in hparams['train']")
+                continue
+            lats = dict(np.load(DATASET_DIR / hparams['data']['dataset_path'] / 'coords.npz', allow_pickle=True))['lat']
+            for time in range(y_hat_all.shape[0]):
+                val_rmse.update(torch.tensor(y_hat_all[time]), torch.tensor(y_all[time]), torch.tensor(lats))
+            print(f"Validation RMSE for {version}: {val_rmse.compute().item()}")
+        except Exception as e:
+            print(f"Error occurred while predicting {version}: {e}")
+            continue
+        
+        row = {
+            'version': version,  # string
+            **{param: float(hparams['train'][param]) for param in params_list},  # float
+            'val_rmse': val_rmse.compute().item()
+        }
+        val_rmse.reset()  # reset pour le prochain run
+        print(row)
+        rows.append(row)
+
+    # Build dataframe and persist, merging with existing file if present
+    df_new = pd.DataFrame(rows)
+    if csv_path is not None:
+        try:
+            if csv_path.exists():
+                df_existing = pd.read_csv(csv_path)
+                # Avoid duplicates just in case
+                df_combined = pd.concat([df_existing, df_new], ignore_index=True)
+                df_combined = df_combined.drop_duplicates(subset=['version'], keep='first')
+            else:
+                df_combined = df_new
+            df_combined.to_csv(csv_path, index=False)
+            return df_combined
+        except Exception as e:
+            print(f"Could not write CSV to {csv_path}: {e}")
+            return df_new
+    else:
+        return df_new
+
 
 if __name__=='__main__':
     argparser = argparse.ArgumentParser(description="Compare different runs")
@@ -105,10 +173,13 @@ if __name__=='__main__':
     args = argparser.parse_args()
     var_name = args.var_name
 
-    runs_list = np.sort(glob.glob(str(RUNS_DIR / 'MPI-ESM1-2-LR/annual/exp1/pr_cnn-lstm_seed42_seq5_mem50_sub1/lightning_logs/version_*')))
+    '''
+    exp = 'exp2'
+    test_name = 'pr_cnn-lstm_seed42_seq5_mem50_sub1'
+    runs_list = np.sort(glob.glob(str(RUNS_DIR / f'MPI-ESM1-2-LR/annual/{exp}/{test_name}/lightning_logs/version_*')))
     print(len(runs_list))
-    df = compare_runs(runs_list, params_list=['learning_rate', 'batch_size', 'max_epochs', 'lstm_units'], 
-                      save_dir=RUNS_DIR / 'MPI-ESM1-2-LR/annual/exp1/pr_cnn-lstm_seed42_seq5_mem50_sub1')
+    df = compare_hp(runs_list, params_list=['learning_rate', 'batch_size', 'max_epochs', 'lstm_units'], 
+                      save_dir=RUNS_DIR / f'MPI-ESM1-2-LR/annual/{exp}/{test_name}')
 
     print(df)
 
@@ -121,30 +192,33 @@ if __name__=='__main__':
 
     model_name = runs['model_name']
     timescale = runs['timescale']
-    exp = runs['exp']
+    #exp = runs['exp']
 
-    graph_dir = GRAPHS_DIR/f'runs/{model_name}/{timescale}/{exp}'
-    title = runs['model_name'] + '_' + runs['timescale'] + '_' + runs['exp'] + '_' + args.simus_test
+    graph_dir = GRAPHS_DIR/f'runs/{model_name}/{timescale}'
+    title = runs['model_name'] + '_' + runs['timescale'] 
     
     runs_dict = runs['compare']['runs_to_compare']
-    eval_func = EvaluationPlots(config_plots=config_plots, 
-                                simulation_name=args.simus_test, 
+    eval_func = EvaluationPlots(config_plots=config_plots,
+                                simulation_name=None,
                                 var_name=var_name)
-    y, y_hat_dict, t = compare_tests(runs_dict, 
-                               simus_test=args.simus_test,
+    
+
+    lats = dict(np.load(DATASET_DIR / model_name / timescale / 'coords.npz', allow_pickle=True))['lat']
+    #compare_metrics2(y, y_hat_dict, lats=lats, var_name=var_name, title=title, save_dir=graph_dir, 
+    # ensemble_scoring='scores_of_bootstrap_mean')
+    #compare_metrics2(y, y_hat_dict, lats=lats, var_name=var_name, title=title, save_dir=graph_dir, 
+    # ensemble_scoring='mean_of_scores')
+    label_dict = {'ssp126': 'exp2', 'ssp245': 'exp1', 'ssp370': 'exp3', 'ssp585': 'exp4'}
+    for ssp, exp in label_dict.items():
+        run_dict = {ssp: runs_dict[ssp]}
+        y, y_hat_dict, t = compare_tests(run_dict,
+                               simus_test=None,
                                var_name=var_name,
                                eval_func=None,
                                plot_save_dir=None)
+        compare_temporal_profiles(y, {'seq5_mem50': y_hat_dict[ssp]}, t, var_name=var_name, lats=lats, config_plots=None,
+                              title=title + f'_{exp}_{ssp}', 
+                              save_dir=graph_dir/f'{exp}')
 
-    lats = dict(np.load(DATASET_DIR / model_name / timescale / 'coords.npz', allow_pickle=True))['lat']
-    compare_metrics2(y, y_hat_dict, lats=lats, var_name=var_name, title=title, save_dir=graph_dir, 
-     ensemble_scoring='scores_of_bootstrap_mean')
-    compare_metrics2(y, y_hat_dict, lats=lats, var_name=var_name, title=title, save_dir=graph_dir, 
-     ensemble_scoring='mean_of_scores')
-    #compare_temporal_profiles(y, y_hat_dict, t, var_name=var_name, lats=lats, config_plots=config_plots,
-    #                          title=title, save_dir=graph_dir)
 
-    #compare_metric_maps2(y, y_hat_dict, t, var_name=var_name, config_plots=config_plots, 
-    #                     title=title, save_dir=graph_dir)
-
-    '''
+    
