@@ -1,9 +1,11 @@
 import glob
 from pathlib import Path
-from re import I
+from scenarIA.src.utils.settings import DATASET_DIR, RAW_DATA_DIR
 import xesmf as xe
 import xarray as xr
+import numpy as np
 from scenarIA.src.utils.datautils import compute_annual_means, dataset_xr_formatting
+import os
 
 # TODO : Check data class to create dataset with same time format, unit, lat (-90,90), lon (0, 360)
 # class input and output ?
@@ -85,15 +87,55 @@ def regrid_inputs_to_outputs(ds, ds_target):
     ds['CH4'] = ch4
     return ds
         
+def concatenate_files_time_dim(files):
+    """ Concatenate all time steps """
+    # use chunks
+    ds_list = []
+    for file in files:
+        ds = xr.open_dataset(file, chunks={'time': 5})
+        ds_list.append(ds)
+    ds_concat = xr.concat(ds_list, dim='time')
+    return ds_concat
+
+def build_outputs_dataset(rawdata_dir, simu, member_list, vars_list, dataset_dir, annual_mean=True):
+    """ From ESGF standard files, carefull data are already concatenate in time dimension """
+    """ TODO new func for raw ESGF downloaded files classification """
+    ds_list = []
+    for var in vars_list:
+        ds_var_list = []
+        for member in member_list:
+            file = np.sort(glob.glob(str(rawdata_dir /f'{var}*{member}*.nc')))[0]
+            print(file)
+            ds = xr.open_dataset(file, chunks={'time': 5})
+            if annual_mean:
+                ds = compute_annual_means(ds)
+            ds_var_list.append(ds)
+        ds_concat = xr.concat(ds_var_list, dim='member')
+        ds_list.append(ds_concat)
+    ds_final = xr.merge(ds_list)
+    ds_final = dataset_xr_formatting(ds_final)
+    ds_final.to_netcdf(dataset_dir / f'outputs_{simu}.nc')
+    return ds_final
+
+def build_inputs_dataset(rawdata_dir, simu, vars_list, dataset_dir, annual_mean=True):
+    for var in vars_list:
+        file = np.sort(glob.glob(str(rawdata_dir /f'{var}*{simu}*.nc')))[0]
+        ds = xr.open_dataset(file).sum('sector')
+        if annual_mean:
+            ds = compute_annual_means(ds)
+        
+
+    
 
 if __name__ == "__main__":
-    # TODO : add argparse for dataset_path or list path et output ou inputs !!!
-
-    DATASET_PATH = Path('/scratch/globc/garcia/scenarIA/datasets/MPI-ESM1-2-LR/annual/')
-    simus = ['historical', 'ssp126', 'ssp245', 'ssp370', 'ssp585', 'hist-aer', 'hist-GHG']
-    files_dict = {}
-    for simu in simus:
-        files_dict[simu] = glob.glob(str(DATASET_PATH / f'inputs_{simu}_regrid2.nc'))[0]
-    print(files_dict)
-    input = Inputs(files_dict, dataset_path=DATASET_PATH)
-    input.build_dataset()
+    vars = ['pr', 'tas']
+    member_list = [f'r{i}i1p1f1' for i in range(1,31)]
+    simus = ['hist-aer', 'hist-GHG', 'hist-nat']
+    
+    for simu in simus: 
+        ds_final = build_outputs_dataset(RAW_DATA_DIR / f'MPI-ESM1-2-LR/mon/{simu}', 
+                                        simu, 
+                                        member_list=member_list, 
+                                        vars_list=vars, 
+                                        dataset_dir=DATASET_DIR/'MPI-ESM1-2-LR/annual', annual_mean=True)
+        print(ds_final)

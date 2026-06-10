@@ -1,11 +1,22 @@
 from intake_esgf import ESGFCatalog
 import intake_esgf
-simus = ['hist-aer', 'hist-nat', 'hist-GHG']
+
+simus = ['ssp119']
 for simu in simus:
-    intake_esgf.conf.set(local_cache = [f"/scratch/globc/garcia/scenarIA/rawdata/MPI-ESM1-2-LR/mon/{simu}/"],
-                         num_threads=12
+    intake_esgf.conf.set(local_cache = [f"/scratch/globc/garcia/scenarIA/rawdata/input4mips/{simu}/"],
+                         num_threads=1
                          )
+    intake_esgf.conf.set(all_indices=True)
+    intake_esgf.conf.save()
     print(intake_esgf.conf['num_threads'])
+    cat = ESGFCatalog()
+    cat.search(
+        institution_id="PNNL-JGCRI",
+        variable_id=["CO2_em_anthro"],
+    )
+    cat.to_dataset_dict()
+    del cat
+    '''
     for i in range(1,31):
         print(i)
         cat = ESGFCatalog()
@@ -18,3 +29,4 @@ for simu in simus:
         )
         cat.to_dataset_dict()
         del cat
+    '''

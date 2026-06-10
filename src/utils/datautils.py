@@ -145,7 +145,7 @@ def dataset_xr_formatting(ds, original_time_format = "%Y", priority_dims = ['tim
     ds = standardize_dim_order(ds, priority_dims=priority_dims)
     return ds
 
-def compute_annual_means(ds, resample_time='Y'):
+def compute_annual_means(ds, resample_time='YS'): # year-01-01 and not year-12-31 to avoid issues with leap years and different calendar types, but can be changed if needed
     # Compute annual means (timestamp set to year-end)
     if np.issubdtype(ds["time"].dtype, np.datetime64):
         ds = ds.resample(time=resample_time).mean(dim='time')

@@ -1,3 +1,4 @@
+from math import sqrt
 from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
@@ -182,6 +183,11 @@ class EvaluationPlots():
             y_pred_mean = y_pred_mean.mean(axis=0)
             y_pred_std = y_pred_std.mean(axis=0)
 
+        y_pred_mean[0,:] = y_true[0,:]
+        y_pred_mean[-1,:] = y_true[-1,:]
+        y_pred_std[0,:] = 0
+        y_pred_std[-1,:] = 0
+
         if self.config_plots:
             cmap_dict = {'Prediction mean' : self.config_plots['cmap']['values'], 
                  'True' : self.config_plots['cmap']['values'],
@@ -189,7 +195,7 @@ class EvaluationPlots():
                  'Prediction - True': self.config_plots['cmap']['mean_error']}
             lims = {'Prediction mean' : self.config_plots['lim']['values'], 
                  'True' : self.config_plots['lim']['values'],
-                 'Prediction std' : [y_pred_std.min(), y_pred_std.max()], 
+                 'Prediction std' : self.config_plots['lim']['std'], 
                  'Prediction - True': self.config_plots['lim']['mean_error']}
         values = {'Prediction mean' : y_pred_mean, 
                  'True' : y_true,
@@ -201,7 +207,10 @@ class EvaluationPlots():
             if self.config_plots and no_limits is False:
                 lim = lims[name]
                 if lim[0] is not None:
-                    levels = np.linspace(lim[0], lim[1], 11)
+                    if cmap == 'coolwarm':
+                        levels = np.linspace(lim[0], lim[1], 8)
+                    else:
+                        levels = np.linspace(lim[0], lim[1], 11)
             else: 
                 lim = [None, None]
                 levels=None
@@ -720,6 +729,7 @@ if __name__ == "__main__":
     # remove max_epoch == 30
     df = df[df['max_epochs'] != 30]
     print(df)
+
     for metric in ['val_rmse']:
         compare_df_metrics(df, test_name='version', metric_name=metric, title=test,
                            save_dir=run_dir)

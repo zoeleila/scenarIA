@@ -3,7 +3,7 @@ tas:
   longname: Temperature
   unit: K
   lim:
-    values: [-12, 12] # if climatology
+    values: [0, 12] # if climatology
     rmse: [0., 1.1]
     mae: [0., 1.5]
     temporal_correlation: [-1, 1]
@@ -14,7 +14,7 @@ tas:
     std: [0., 0.5]
   color: 'red'
   cmap:
-    values: 'coolwarm'
+    values: 'YlOrRd'
     rmse: 'Reds'
     mae: 'viridis'
     temporal_correlation: 'coolwarm'
