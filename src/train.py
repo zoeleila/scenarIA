@@ -38,10 +38,10 @@ def run(config):
     logger = TensorBoardLogger(save_dir=RUNS_DIR / config['train']['runs_dir'], 
                                name='lightning_logs',
                                default_hp_metric=False)
-
+    monitor = config['train']['monitor_metric']
     checkpoint_callback = ModelCheckpoint(
-        monitor="val_loss", 
-        filename='best-checkpoint-{epoch:02d}-{val_loss:.2f}',
+        monitor=monitor,
+        filename='best-checkpoint-{epoch:02d}-' + monitor + '-{' + monitor + ':.2f}',
         save_top_k=1,
         mode='min'
     )

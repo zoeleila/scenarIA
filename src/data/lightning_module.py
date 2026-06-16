@@ -40,6 +40,7 @@ class scenarIALightningModule(pl.LightningModule):
         self.outputs = config['train']['outputs']
         self.inputs = config['train']['inputs']
         self.img_size = config['train']['img_size']
+        self.simus_val = config['train']['simus_val'] # ['ssp370'] or None
         self.simus_test = config['train']['simus_test']
         self.scheduler_step_size = config['train']['scheduler_step_size']
         self.scheduler_gamma = config['train']['scheduler_gamma']
@@ -65,7 +66,13 @@ class scenarIALightningModule(pl.LightningModule):
 
         # hp_metric for hyperparameter optimization, here we choose the validation RMSE
         self.val_rmse = LatWeightedRMSEMetric()
-        self.best_val_rmse = float('inf')
+        self.best_val_score = float('inf') 
+        self.best_val_y_all = None 
+        self.best_val_y_hat_all = None
+        self.val_step_outputs_true = []
+        self.val_step_outputs_hat = []
+        self.valid_across_all_simus = True if self.simus_val is None else False
+        self.monitor_metric = config['train'].get('monitor_metric', 'val_rmse') # for best checkpointing and hyperparameter optimization
 
         self.get_model()
         self.test_metrics = {}
@@ -130,19 +137,51 @@ class scenarIALightningModule(pl.LightningModule):
         self.log('val_loss', loss, on_step=False, on_epoch=True, prog_bar=True)
         self.val_step_outputs.append(loss)
         self.val_rmse.update(y_hat, y, self.lats)
+
+        if self.valid_across_all_simus is False:
+            self.val_step_outputs_true.append(y.detach())
+            self.val_step_outputs_hat.append(y_hat.detach())
         return loss
 
     def on_validation_epoch_end(self):
         epoch_average = torch.stack(self.val_step_outputs).mean()
         self.logger.experiment.add_scalar("loss/val", epoch_average, self.current_epoch)
+        
+        # val_rmse
         rmse = self.val_rmse.compute()
         self.log('val_rmse', rmse, on_step=False, on_epoch=True)
         self.val_rmse.reset()
         self.val_step_outputs.clear()
-        if rmse < self.best_val_rmse:
-            self.best_val_rmse = rmse
+        
+        # val_nrmse
+        if self.valid_across_all_simus is False:
+            y_all = torch.cat(self.val_step_outputs_true, dim=0).view(-1, self.img_size[0], self.img_size[1])
+            y_hat_all = torch.cat(self.val_step_outputs_hat, dim=0).view(-1, self.img_size[0], self.img_size[1])
+            nrmse = NRMSE_ClimateBench(y_hat_all, y_all, self.lats)
+            self.log('val_nrmse', nrmse, on_step=False, on_epoch=True)
+            self.val_step_outputs_true.clear()
+            self.val_step_outputs_hat.clear()
+
+        # Tracking du best score selon la métrique choisie
+        monitored = nrmse if self.monitor_metric == 'val_nrmse' else rmse
+        if monitored < self.best_val_score:
+            self.best_val_score = monitored
+            if self.valid_across_all_simus is False:
+                self.best_val_y_all = y_all.cpu()
+                self.best_val_y_hat_all = y_hat_all.cpu()
 
     def on_fit_end(self):
+        if self.best_val_y_all is not None and self.valid_across_all_simus is False:
+            fig, ax = plt.subplots()
+            ax.plot(weighted_global_mean(self.best_val_y_all, self.lats.cpu()).cpu().numpy(), label='True')
+            ax.plot(weighted_global_mean(self.best_val_y_hat_all, self.lats.cpu()).cpu().numpy(), label='Predicted')
+            ax.set_xlabel('time')
+            ax.set_ylabel(f'{self.outputs} value')
+            ax.set_title(f'Val – best {self.monitor_metric}: {self.best_val_score:.4f}')
+            ax.legend()
+            self.logger.experiment.add_figure('Figure/val_best_true_vs_predicted', fig)
+
+        # Étapes pour afficher tous les hyperparamètres dans TensorBoard
         valid_types = (int, float, str, bool, list, tuple)
         
         flat_hparams = {}
@@ -157,7 +196,7 @@ class scenarIALightningModule(pl.LightningModule):
 
         self.logger.log_hyperparams(
             flat_hparams,
-            {"hp/val_rmse": self.best_val_rmse}
+            {f"hp/{self.monitor_metric}": self.best_val_score}
         )
         self.logger.experiment.flush()
 

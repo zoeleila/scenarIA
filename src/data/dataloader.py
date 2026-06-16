@@ -40,11 +40,13 @@ class scenarIA(Dataset):
         self.nb_member_per_subsets = config['data']['nb_member_per_subsets']
         self.one_to_many = bool(config['data']['one_to_many'])
         
-        if data_type == 'val':
+        self.simus = config['train'][f'simus_{data_type}']
+        if self.data_type == 'val' and self.simus is None:
             self.simus = config['train']['simus_train']
-        else :
-            self.simus = config['train'][f'simus_{data_type}']
-        
+            valid_across_all_simus = True # Pick samples from all simulations for validation
+        else:
+            valid_across_all_simus = False # One full time series simulation as validation
+
         if isinstance(self.simus, str):
             self.simus = [self.simus]
 
@@ -57,29 +59,30 @@ class scenarIA(Dataset):
         else:
             self.load_outputs()
 
-        # annual mean
-        # pi control
+        
+        # if val_simus = None else shuffle only train data
+        if valid_across_all_simus:
 
-        nb_samples = self.inputs.shape[0]
-        val_seq_length = nb_samples // int(nb_samples * self.val_size)
-        val_idx = np.arange(nb_samples, step=val_seq_length)
-        train_idx = np.setdiff1d(np.arange(nb_samples), val_idx)
-        if self.data_type == 'train':
-            self.inputs = self.inputs[train_idx]
-            self.outputs = self.outputs[train_idx]
-            self.time = [self.time[i] for i in train_idx]
+            nb_samples = self.inputs.shape[0]
+            val_seq_length = nb_samples // int(nb_samples * self.val_size)
+            val_idx = np.arange(nb_samples, step=val_seq_length)
+            train_idx = np.setdiff1d(np.arange(nb_samples), val_idx)
+            if self.data_type == 'train':
+                self.inputs = self.inputs[train_idx]
+                self.outputs = self.outputs[train_idx]
 
-        elif self.data_type == 'val': 
-            self.inputs = self.inputs[val_idx]
-            self.outputs = self.outputs[val_idx]
-            self.time = [self.time[i] for i in val_idx]
+            elif self.data_type == 'val': 
+                self.inputs = self.inputs[val_idx]
+                self.outputs = self.outputs[val_idx]
+                self.time = [self.time[i] for i in val_idx]
 
-        if data_type == 'train' or data_type == 'val':
-            rng = np.random.default_rng(self.seed)
-            perm = rng.permutation(self.inputs.shape[0])
-            self.inputs = self.inputs[perm]
-            self.outputs = self.outputs[perm]
-            self.time = [self.time[i] for i in perm]        
+            if data_type == 'train' or data_type == 'val':
+                rng = np.random.default_rng(self.seed)
+                perm = rng.permutation(self.inputs.shape[0])
+                self.inputs = self.inputs[perm]
+                self.outputs = self.outputs[perm]
+                self.time = [self.time[i] for i in perm]        
+        
         
         print('final inputs shape shuffle', self.inputs.shape)
         print('final outputs shape shuffle', self.outputs.shape if self.outputs is not None else None)
@@ -303,12 +306,14 @@ def get_dataloaders(data_type: str, config:dict, transforms:bool=True) -> DataLo
     
     if data_type == 'train':
         batch_size = config['train']['batch_size']
+        shuffle = True
     else : 
         batch_size = 1
+        shuffle = False
 
     dataloader = DataLoader(dataset, 
                             batch_size=batch_size, 
-                            shuffle=False,
+                            shuffle=shuffle,
                             num_workers=1)
     return dataloader
 
@@ -404,3 +409,11 @@ if __name__=='__main__':
     dataset = scenarIA(transform=None,
                             config=config,
                             data_type='train')
+    train_dataloader = get_dataloaders('train', config, transforms=False)
+    for x, y, t in train_dataloader:
+        print(x.shape, y.shape, t)
+        break
+    val_dataloader = get_dataloaders('val', config, transforms=False)
+    for x, y, t in val_dataloader:
+        print(x.shape, y.shape, t)
+        

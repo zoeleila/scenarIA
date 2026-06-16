@@ -1,16 +1,16 @@
 data:
-  exp: 'exp1'
+  exp: 'exp6'
   model_name: 'MPI-ESM1-2-LR'
   raw_path: 'MPI-ESM1-2-LR/r1-r50i1p1f1/'
   dataset_path: 'MPI-ESM1-2-LR/annual/'
   seed_subsets: 42
-  nb_member_per_subsets: 50 # one-to-many approach. If n = 1, individual approach.
+  nb_member_per_subsets: 30 # one-to-many approach. If n = 1, individual approach.
   one_to_many: True
   nb_subsets: 1  # only if one-to-many is True
   piControl_diff: True
   predict_only_last_timestep: True
   timescale: 'annual'
-  seq_length: 10
+  seq_length: 5
   moving_window: 1
 
 
@@ -19,15 +19,17 @@ train: # for training
   seed: 42
   arch: 'cnn-lstm'
   learning_rate: 0.001
-  max_epochs: 50
+  max_epochs: 30
   batch_size: 4
-  runs_dir: 'MPI-ESM1-2-LR/annual/exp1/' 
+  runs_dir: 'MPI-ESM1-2-LR/annual/exp6/'
   inputs: ['CO2', 'SO2', 'CH4', 'BC']
   outputs: ['pr']
-  simus_train: ['historical', 'ssp126', 'ssp370', 'ssp585']
+  simus_train: ['historical', 'hist-aer', 'hist-GHG', 'ssp119', 'ssp126', 'ssp370', 'ssp585']
+  simus_val: null
   simus_test: ['ssp245']
   simus_inference: ['ssp245']
   img_size: [96, 192]
   scheduler_step_size: 50
   scheduler_gamma: 0.1
   lstm_units: 64
+  monitor_metric: 'val_loss' # for best checkpointing and hyperparameter optimization

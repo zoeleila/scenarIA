@@ -14,6 +14,7 @@ def save_infos_from_config(config: dict) -> dict:
         infos = {}
     exp = config['data']['exp']
     infos[exp] = {
+        'simus_val': config['train']['simus_val'],
         'simus_train': config['train']['simus_train'],
         'inputs': config['train']['inputs']}
     
@@ -27,8 +28,7 @@ def test_name_from_config(config:dict) -> str:
     seed = config['train']['seed']
     seq_length = config['data']['seq_length']
     nb_member_per_subsets = config['data']['nb_member_per_subsets']
-    nb_subsets = config['data']['nb_subsets'] if bool(config['data']['one_to_many']) else 1
-    test_name = f'{outputs_str}_{arch}_seed{seed}_seq{seq_length}_mem{nb_member_per_subsets}_sub{nb_subsets}'
+    test_name = f'{outputs_str}_{arch}_seed{seed}_seq{seq_length}_mem{nb_member_per_subsets}'
     return test_name
 
 
