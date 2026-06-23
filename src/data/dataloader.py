@@ -39,8 +39,11 @@ class scenarIA(Dataset):
         self.seed_subsets = config['data']['seed_subsets']
         self.nb_member_per_subsets = config['data']['nb_member_per_subsets']
         self.one_to_many = bool(config['data']['one_to_many'])
-        
-        self.simus = config['train'][f'simus_{data_type}']
+        try :
+            self.simus = config['train'][f'simus_{data_type}']
+        except KeyError:
+            self.simus = None # for previous runs without simus_val in config
+            
         if self.data_type == 'val' and self.simus is None:
             self.simus = config['train']['simus_train']
             valid_across_all_simus = True # Pick samples from all simulations for validation
@@ -75,19 +78,20 @@ class scenarIA(Dataset):
                 self.inputs = self.inputs[val_idx]
                 self.outputs = self.outputs[val_idx]
                 self.time = [self.time[i] for i in val_idx]
+                self.simus_all = [self.simus_all[i] for i in val_idx]
 
             if data_type == 'train' or data_type == 'val':
                 rng = np.random.default_rng(self.seed)
                 perm = rng.permutation(self.inputs.shape[0])
                 self.inputs = self.inputs[perm]
                 self.outputs = self.outputs[perm]
-                self.time = [self.time[i] for i in perm]        
-        
-        
+                self.time = [self.time[i] for i in perm]
+                self.simus_all = [self.simus_all[i] for i in perm]
+
         print('final inputs shape shuffle', self.inputs.shape)
         print('final outputs shape shuffle', self.outputs.shape if self.outputs is not None else None)
         print('time length shuffle', len(self.time), self.time[0])
-   
+        print('simus length shuffle', len(self.simus_all), self.simus_all[0] if self.simus_all else None)
 
     def load_inputs(self):
         """
@@ -97,6 +101,7 @@ class scenarIA(Dataset):
         """
         inputs_all = []
         time_all = []
+        simus_all = []
 
         for simu in self.simus:
             inputs_xr = xr.open_dataset(self.dataset_path / f'inputs_{simu}_regrid2.nc')[self.inputs_var_list]
@@ -114,10 +119,12 @@ class scenarIA(Dataset):
                 )
                 inputs_all.append(inputs)
                 time_all += time
-
+                simus_all += [simu] * len(time)
 
         inputs_concat = np.concatenate(inputs_all, axis=0) if len(inputs_all) > 0 else np.array([])
         self.inputs = inputs_concat
+        self.simus_all = simus_all
+        print(len(self.simus_all))
         if self.data_type == 'inference':
             self.time = time_all
             if self.predict_only_last_timestep:
@@ -253,10 +260,11 @@ class scenarIA(Dataset):
         t = torch.tensor([pd.to_datetime(t64).year,
                             pd.to_datetime(t64).month,
                             pd.to_datetime(t64).day])
+        sample_simu = self.simus_all[idx]
         if self.transform:
             x, y = self.transform((x, y))
             x.float(), y.float()
-        return x, y, t # TODO : return scenario name !!!!!!!!!!
+        return x, y, t, sample_simu
 
 def get_climatology(config, climatology_simu: str='piControl', period=['1850-01-01', '2250-12-31']):
     dataset_path = DATASET_DIR / config['data']['dataset_path']
@@ -406,14 +414,7 @@ if __name__=='__main__':
     with open(CONFIG_DIR / 'config.yaml') as file:
         config = yaml.safe_load(file)
     
-    dataset = scenarIA(transform=None,
-                            config=config,
-                            data_type='train')
-    train_dataloader = get_dataloaders('train', config, transforms=False)
-    for x, y, t in train_dataloader:
-        print(x.shape, y.shape, t)
-        break
+
     val_dataloader = get_dataloaders('val', config, transforms=False)
-    for x, y, t in val_dataloader:
-        print(x.shape, y.shape, t)
-        
+    for x, y, t, simu in val_dataloader:
+        print(x.shape, y.shape, t, simu)

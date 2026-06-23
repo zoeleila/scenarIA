@@ -40,7 +40,10 @@ class scenarIALightningModule(pl.LightningModule):
         self.outputs = config['train']['outputs']
         self.inputs = config['train']['inputs']
         self.img_size = config['train']['img_size']
-        self.simus_val = config['train']['simus_val'] # ['ssp370'] or None
+        try:
+            self.simus_val = config['train']['simus_val'] # ['ssp370'] or None
+        except KeyError:
+            self.simus_val = None
         self.simus_test = config['train']['simus_test']
         self.scheduler_step_size = config['train']['scheduler_step_size']
         self.scheduler_gamma = config['train']['scheduler_gamma']
@@ -67,10 +70,8 @@ class scenarIALightningModule(pl.LightningModule):
         # hp_metric for hyperparameter optimization, here we choose the validation RMSE
         self.val_rmse = LatWeightedRMSEMetric()
         self.best_val_score = float('inf') 
-        self.best_val_y_all = None 
-        self.best_val_y_hat_all = None
-        self.val_step_outputs_true = []
-        self.val_step_outputs_hat = []
+        self.best_val_outputs_per_simu = {}
+        self.val_outputs_per_simu = {} 
         self.valid_across_all_simus = True if self.simus_val is None else False
         self.monitor_metric = config['train'].get('monitor_metric', 'val_rmse') # for best checkpointing and hyperparameter optimization
 
@@ -80,6 +81,7 @@ class scenarIALightningModule(pl.LightningModule):
         self.val_step_outputs = []
         self.test_step_outputs_true = []
         self.test_step_outputs_hat = []
+        self.test_step_simus = [] 
         self.test_step_times = []
 
         self.save_hyperparameters(ignore=['lats'])
@@ -118,7 +120,7 @@ class scenarIALightningModule(pl.LightningModule):
         return y_hat, loss
 
     def training_step(self, batch, batch_idx):
-        x, y, _ = batch
+        x, y, _, _ = batch
         y_hat, loss = self.common_step(x, y)
         self.train_step_outputs.append(loss)
         self.log('train_loss', loss, on_step=False, on_epoch=True, prog_bar=True)
@@ -132,15 +134,18 @@ class scenarIALightningModule(pl.LightningModule):
         self.log("epoch_time", epoch_duration, on_step=False, on_epoch=True, prog_bar=True)
 
     def validation_step(self, batch, batch_idx):
-        x, y, _ = batch
+        x, y, _, simu = batch
         y_hat, loss = self.common_step(x, y)
         self.log('val_loss', loss, on_step=False, on_epoch=True, prog_bar=True)
         self.val_step_outputs.append(loss)
         self.val_rmse.update(y_hat, y, self.lats)
 
         if self.valid_across_all_simus is False:
-            self.val_step_outputs_true.append(y.detach())
-            self.val_step_outputs_hat.append(y_hat.detach())
+            simu_name = simu[0]  # list of string
+            if simu_name not in self.val_outputs_per_simu:
+                self.val_outputs_per_simu[simu_name] = {'true': [], 'hat': []}
+            self.val_outputs_per_simu[simu_name]['true'].append(y.detach().cpu())
+            self.val_outputs_per_simu[simu_name]['hat'].append(y_hat.detach().cpu())
         return loss
 
     def on_validation_epoch_end(self):
@@ -155,31 +160,49 @@ class scenarIALightningModule(pl.LightningModule):
         
         # val_nrmse
         if self.valid_across_all_simus is False:
-            y_all = torch.cat(self.val_step_outputs_true, dim=0).view(-1, self.img_size[0], self.img_size[1])
-            y_hat_all = torch.cat(self.val_step_outputs_hat, dim=0).view(-1, self.img_size[0], self.img_size[1])
-            nrmse = NRMSE_ClimateBench(y_hat_all, y_all, self.lats)
-            self.log('val_nrmse', nrmse, on_step=False, on_epoch=True)
-            self.val_step_outputs_true.clear()
-            self.val_step_outputs_hat.clear()
+            nrmse_per_simu = {}
+            for simu_name, outputs in self.val_outputs_per_simu.items():
+                y_all = torch.cat(outputs['true'], dim=0).view(-1, self.img_size[0], self.img_size[1])
+                y_hat_all = torch.cat(outputs['hat'], dim=0).view(-1, self.img_size[0], self.img_size[1])
+                nrmse_s = NRMSE_ClimateBench(y_hat_all, y_all, self.lats.cpu())
+                nrmse_per_simu[simu_name] = nrmse_s
+                self.log(f'val_nrmse_{simu_name}', nrmse_s, on_step=False, on_epoch=True)
 
-        # Tracking du best score selon la métrique choisie
-        monitored = nrmse if self.monitor_metric == 'val_nrmse' else rmse
-        if monitored < self.best_val_score:
-            self.best_val_score = monitored
-            if self.valid_across_all_simus is False:
-                self.best_val_y_all = y_all.cpu()
-                self.best_val_y_hat_all = y_hat_all.cpu()
+            nrmse = torch.stack(list(nrmse_per_simu.values())).sum()  # somme sur les simus
+            self.log('val_nrmse', nrmse, on_step=False, on_epoch=True)
+
+            # Tracking du best score
+            monitored = nrmse if self.monitor_metric == 'val_nrmse' else rmse
+            if monitored < self.best_val_score:
+                self.best_val_score = monitored
+                self.best_val_outputs_per_simu = {
+                    simu_name: {
+                        'y_all': torch.cat(outputs['true'], dim=0).view(-1, self.img_size[0], self.img_size[1]),
+                        'y_hat_all': torch.cat(outputs['hat'], dim=0).view(-1, self.img_size[0], self.img_size[1]),
+                    }
+                    for simu_name, outputs in self.val_outputs_per_simu.items()
+                }
+
+            self.val_outputs_per_simu.clear()
+
+        else:
+            monitored = rmse
+            if monitored < self.best_val_score:
+                self.best_val_score = monitored
 
     def on_fit_end(self):
-        if self.best_val_y_all is not None and self.valid_across_all_simus is False:
-            fig, ax = plt.subplots()
-            ax.plot(weighted_global_mean(self.best_val_y_all, self.lats.cpu()).cpu().numpy(), label='True')
-            ax.plot(weighted_global_mean(self.best_val_y_hat_all, self.lats.cpu()).cpu().numpy(), label='Predicted')
-            ax.set_xlabel('time')
-            ax.set_ylabel(f'{self.outputs} value')
-            ax.set_title(f'Val – best {self.monitor_metric}: {self.best_val_score:.4f}')
-            ax.legend()
-            self.logger.experiment.add_figure('Figure/val_best_true_vs_predicted', fig)
+        if self.valid_across_all_simus is False and self.best_val_outputs_per_simu:
+            for simu_name, outputs in self.best_val_outputs_per_simu.items():
+                y_all = outputs['y_all']
+                y_hat_all = outputs['y_hat_all']
+                fig, ax = plt.subplots()
+                ax.plot(weighted_global_mean(y_all, self.lats.cpu()).cpu().numpy(), label='True')
+                ax.plot(weighted_global_mean(y_hat_all, self.lats.cpu()).cpu().numpy(), label='Predicted')
+                ax.set_xlabel('time')
+                ax.set_ylabel(f'{self.outputs} value')
+                ax.set_title(f'Val {simu_name} – best {self.monitor_metric}: {self.best_val_score:.4f}')
+                ax.legend()
+                self.logger.experiment.add_figure(f'Figure/val_best_true_vs_predicted_{simu_name}', fig)
 
         # Étapes pour afficher tous les hyperparamètres dans TensorBoard
         valid_types = (int, float, str, bool, list, tuple)
@@ -201,7 +224,7 @@ class scenarIALightningModule(pl.LightningModule):
         self.logger.experiment.flush()
 
     def test_step(self, batch, batch_idx):
-        x, y, t = batch
+        x, y, t, simu = batch
         y_hat, loss = self.common_step(x, y)
         self.log("test_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
             
@@ -220,6 +243,7 @@ class scenarIALightningModule(pl.LightningModule):
         self.test_step_outputs_true.append(y)
         self.test_step_outputs_hat.append(y_hat)
         self.test_step_times.append(t)
+        self.test_step_simus.append(simu)
 
         if batch_idx == 0:
 
@@ -259,28 +283,44 @@ class scenarIALightningModule(pl.LightningModule):
 
         self.log('test_nrmse', NRMSE_ClimateBench(y_hat_all, y_all, self.lats))
         self.log('loss', df['loss'].mean())
-
         spatial_corr = self.spatial_corr_metric.compute()
         self.log("test_corr", spatial_corr)
-        
-        fig, ax = plt.subplots()
-        ax.plot(weighted_global_mean(y_all, self.lats).cpu().numpy(), label='True')
-        ax.plot(weighted_global_mean(y_hat_all, self.lats).cpu().numpy(), label='Predicted')
-        ax.set_xlabel('time') # TODO change according to time features !! monthly
-        ax.set_ylabel(f'{self.outputs} value')
-        ax.legend()
-        self.logger.experiment.add_figure('Figure/test_true_vs_predicted', fig)
 
+        outputs_per_simu = {}
+        for y, y_hat, t, simu in zip(
+            self.test_step_outputs_true,
+            self.test_step_outputs_hat,
+            self.test_step_times,
+            self.test_step_simus 
+        ):
+            simu_name = simu[0]
+            if simu_name not in outputs_per_simu:
+                outputs_per_simu[simu_name] = {'true': [], 'hat': [], 'times': []}
+            outputs_per_simu[simu_name]['true'].append(y)
+            outputs_per_simu[simu_name]['hat'].append(y_hat)
+            outputs_per_simu[simu_name]['times'].append(t)
 
-        eval = EvaluationPlots(simulation_name=self.simus_test[0],# TODO change by returning simu in dataloader get item
-                               var_name=self.outputs[0], # TODO change for multivariate
-                               config_plots=self.config_plots)
-        start_year = t_all[0, 0]
-        end_year = t_all[-1, 0]
-        eval.plot_error_maps(y_all.cpu().numpy(), 
-                             y_hat_all.cpu().numpy(), 
-                             title=f'{self.simus_test} {start_year}-{end_year}',
-                             save_path=Path(self.logger.log_dir) / 'error_maps.png')
+        for simu_name, outputs in outputs_per_simu.items():
+            y_s = torch.cat(outputs['true'], dim=0).view(-1, self.img_size[0], self.img_size[1])
+            y_hat_s = torch.cat(outputs['hat'], dim=0).view(-1, self.img_size[0], self.img_size[1])
+            t_s = torch.cat(outputs['times']).cpu().numpy()
+
+            fig, ax = plt.subplots()
+            ax.plot(weighted_global_mean(y_s, self.lats).cpu().numpy(), label='True')
+            ax.plot(weighted_global_mean(y_hat_s, self.lats).cpu().numpy(), label='Predicted')
+            ax.set_xlabel('time')
+            ax.set_ylabel(f'{self.outputs} value')
+            ax.set_title(f'Test {simu_name} {t_s[0,0]:.0f}-{t_s[-1,0]:.0f}')
+            ax.legend()
+            self.logger.experiment.add_figure(f'Figure/test_true_vs_predicted_{simu_name}', fig)
+
+            eval = EvaluationPlots(simulation_name=simu_name,
+                                var_name=self.outputs[0],
+                                config_plots=self.config_plots)
+            eval.plot_error_maps(y_s.cpu().numpy(),
+                                y_hat_s.cpu().numpy(),
+                                title=f'{simu_name} {t_s[0,0]:.0f}-{t_s[-1,0]:.0f}',
+                                save_path=Path(self.logger.log_dir) / f'error_maps_{simu_name}.png')
 
     def configure_optimizers(self):
         optimizer = torch.optim.RMSprop(self.parameters(), lr=self.learning_rate)

@@ -48,6 +48,7 @@ class Inputs:
             print(ds.time.values)
             ds = dataset_xr_formatting(ds, original_time_format, priority_dims=['time', 'lat', 'lon'])
             print(ds.time.values)
+            return ds
             #ds.to_netcdf(self.dataset_path / f'inputs_{simu}_regrid2.nc')
  
 
@@ -128,14 +129,8 @@ def build_inputs_dataset(rawdata_dir, simu, vars_list, dataset_dir, annual_mean=
     
 
 if __name__ == "__main__":
-    vars = ['pr', 'tas']
-    member_list = [f'r{i}i1p1f1' for i in range(1,31)]
-    simus = ['hist-aer', 'hist-GHG', 'hist-nat']
+    file = '/gpfs-calypso/scratch/globc/garcia/scenarIA/datasets/MPI-ESM1-2-LR/annual/inputs_ssp119_regrid2.nc'
+    input = Inputs(files_dict={'ssp119': file}, dataset_path=DATASET_DIR/'MPI-ESM1-2-LR/annual')
+    ds = input.build_dataset(original_time_format="%Y")
+    ds.to_netcdf(DATASET_DIR/'MPI-ESM1-2-LR/annual'/'inputs_ssp119_regrid3.nc')
     
-    for simu in simus: 
-        ds_final = build_outputs_dataset(RAW_DATA_DIR / f'MPI-ESM1-2-LR/mon/{simu}', 
-                                        simu, 
-                                        member_list=member_list, 
-                                        vars_list=vars, 
-                                        dataset_dir=DATASET_DIR/'MPI-ESM1-2-LR/annual', annual_mean=True)
-        print(ds_final)

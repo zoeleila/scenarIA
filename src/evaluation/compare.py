@@ -173,18 +173,6 @@ if __name__=='__main__':
     args = argparser.parse_args()
     var_name = args.var_name
 
-    '''
-    exp = 'exp2'
-    test_name = 'pr_cnn-lstm_seed42_seq5_mem50_sub1'
-    runs_list = np.sort(glob.glob(str(RUNS_DIR / f'MPI-ESM1-2-LR/annual/{exp}/{test_name}/lightning_logs/version_*')))
-    print(len(runs_list))
-    df = compare_hp(runs_list, params_list=['learning_rate', 'batch_size', 'max_epochs', 'lstm_units'], 
-                      save_dir=RUNS_DIR / f'MPI-ESM1-2-LR/annual/{exp}/{test_name}')
-
-    print(df)
-
-
-    '''
     with open(CONFIG_DIR / 'runs.yaml') as file:
         runs = yaml.safe_load(file)
     with open(CONFIG_DIR / 'plots.yaml') as file:
@@ -194,31 +182,21 @@ if __name__=='__main__':
     timescale = runs['timescale']
     #exp = runs['exp']
 
-    graph_dir = GRAPHS_DIR/f'runs/{model_name}/{timescale}'
-    title = runs['model_name'] + '_' + runs['timescale'] 
-    
+    graph_dir = GRAPHS_DIR/f'tests'
+    title = runs['model_name'] + '_' + runs['timescale'] + 'exp1_ssp245_allseq_mem30_mem50'
+
     runs_dict = runs['compare']['runs_to_compare']
     eval_func = EvaluationPlots(config_plots=config_plots,
                                 simulation_name=None,
                                 var_name=var_name)
     
-
-    lats = dict(np.load(DATASET_DIR / model_name / timescale / 'coords.npz', allow_pickle=True))['lat']
-    #compare_metrics2(y, y_hat_dict, lats=lats, var_name=var_name, title=title, save_dir=graph_dir, 
-    # ensemble_scoring='scores_of_bootstrap_mean')
-    #compare_metrics2(y, y_hat_dict, lats=lats, var_name=var_name, title=title, save_dir=graph_dir, 
-    # ensemble_scoring='mean_of_scores')
-    label_dict = {'ssp126': 'exp2', 'ssp245': 'exp1', 'ssp370': 'exp3', 'ssp585': 'exp4'}
-    for ssp, exp in label_dict.items():
-        run_dict = {ssp: runs_dict[ssp]}
-        y, y_hat_dict, t = compare_tests(run_dict,
+    y, y_hat_dict, t = compare_tests(runs_dict,
                                simus_test=None,
                                var_name=var_name,
                                eval_func=None,
                                plot_save_dir=None)
-        compare_temporal_profiles(y, {'seq5_mem50': y_hat_dict[ssp]}, t, var_name=var_name, lats=lats, config_plots=None,
-                              title=title + f'_{exp}_{ssp}', 
-                              save_dir=graph_dir/f'{exp}')
-
+    lats = dict(np.load(DATASET_DIR / model_name / timescale / 'coords.npz', allow_pickle=True))['lat']
+    compare_metrics2(y, y_hat_dict, lats=lats, var_name=var_name, title=title, save_dir=graph_dir, 
+     ensemble_scoring='mean_of_scores')
 
     

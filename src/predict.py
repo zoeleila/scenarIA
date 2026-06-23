@@ -33,9 +33,9 @@ def predict(run_dir,
     t_all = None if data_type == 'inference' else []
     for batch in tqdm(dataloader, desc="Computing stats from dataloader", disable=True):
         if data_type == 'inference':
-            x, _, _ = batch
+            x, _, _, _ = batch
         else:
-            x, y, t = batch
+            x, y, t, _ = batch
             y_all.append(y)
             t_all.append(t)
         x = x.float().to('cpu')

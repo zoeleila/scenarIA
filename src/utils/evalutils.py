@@ -183,11 +183,6 @@ class EvaluationPlots():
             y_pred_mean = y_pred_mean.mean(axis=0)
             y_pred_std = y_pred_std.mean(axis=0)
 
-        y_pred_mean[0,:] = y_true[0,:]
-        y_pred_mean[-1,:] = y_true[-1,:]
-        y_pred_std[0,:] = 0
-        y_pred_std[-1,:] = 0
-
         if self.config_plots:
             cmap_dict = {'Prediction mean' : self.config_plots['cmap']['values'], 
                  'True' : self.config_plots['cmap']['values'],
@@ -208,7 +203,7 @@ class EvaluationPlots():
                 lim = lims[name]
                 if lim[0] is not None:
                     if cmap == 'coolwarm':
-                        levels = np.linspace(lim[0], lim[1], 8)
+                        levels = np.linspace(lim[0], lim[1], 10)
                     else:
                         levels = np.linspace(lim[0], lim[1], 11)
             else: 
@@ -232,7 +227,7 @@ class EvaluationPlots():
                          label= f'{self.var_name} ({self.unit})')
             if self.config_plots and no_limits is False:
                 cbar.set_ticks(np.linspace(lim[0], lim[1], 5))
-                cbar.set_ticklabels([str(round(float(i), 1)) for i in np.linspace(lim[0], lim[1], 5)])
+                cbar.set_ticklabels([str(round(float(i), 2)) for i in np.linspace(lim[0], lim[1], 5)])
         plt.tight_layout(pad=1.5)
         fig.suptitle(title)
         if save_path:
@@ -368,7 +363,8 @@ def compare_temporal_profiles(y, y_hat_dict, t, var_name, lats, point=None, wind
     plt.legend()
     plt.title(title)
     tests_str = '_'.join(y_hat_dict.keys())
-    plt.savefig(save_dir / f'{title}_temporal_profiles_{var_name}_{tests_str}.png')
+    if save_dir:
+        plt.savefig(save_dir / f'{title}_temporal_profiles_{var_name}_{tests_str}.png')
 
 def compare_metrics(y, y_hat_dict, var_name, lats=None, title=None, save_dir=None):
     '''
@@ -733,3 +729,5 @@ if __name__ == "__main__":
     for metric in ['val_rmse']:
         compare_df_metrics(df, test_name='version', metric_name=metric, title=test,
                            save_dir=run_dir)
+        
+ 
