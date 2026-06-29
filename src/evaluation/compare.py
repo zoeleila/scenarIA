@@ -64,7 +64,7 @@ def compare_runs(runs_list, params_list=['learning_rate'], data_type='test', sav
         print(version)
         
         try:
-            y_hat_all, y_all, _, hparams = predict(run_dir, data_type='test', best_checkpoint=False)
+            y_hat_all, y_all, _, hparams = predict(run_dir, data_type='test', best_checkpoint=True)
             print(hparams)
         except Exception as e:
             print(f"Error occurred while predicting: {e}")
@@ -183,7 +183,7 @@ if __name__=='__main__':
     #exp = runs['exp']
 
     graph_dir = GRAPHS_DIR/f'tests'
-    title = runs['model_name'] + '_' + runs['timescale'] + 'exp1_ssp245_allseq_mem30_mem50'
+    title = runs['model_name'] + '_' + runs['timescale'] + 'exp1_ssp245_seq10_testversions'
 
     runs_dict = runs['compare']['runs_to_compare']
     eval_func = EvaluationPlots(config_plots=config_plots,

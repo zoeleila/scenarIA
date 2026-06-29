@@ -6,7 +6,7 @@ import torch
 import yaml
 import argparse
 from pytorch_lightning.loggers import TensorBoardLogger
-from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 import pytorch_lightning as pl
 
 from scenarIA.src.data.dataloader import get_dataloaders
@@ -39,17 +39,23 @@ def run(config):
                                name='lightning_logs',
                                default_hp_metric=False)
     monitor = config['train']['monitor_metric']
+
     checkpoint_callback = ModelCheckpoint(
         monitor=monitor,
         filename='best-checkpoint-{epoch:02d}-' + monitor + '-{' + monitor + ':.2f}',
         save_top_k=1,
-        mode='min'
+        mode='min',
+        save_last=True
     )
 
-    checkpoint_last = ModelCheckpoint(
-    filename='last-{epoch:02d}',
-    save_last=True,       # toujours écrase le précédent
-)
+    early_stopping = EarlyStopping(
+        monitor=monitor,
+        patience=config['train'].get('early_stopping_patience', 10),
+        mode='min',
+        verbose=True,
+        check_finite=True,   # arrête si val_rmse devient NaN ou inf
+    )
+
 
     torch.set_float32_matmul_precision('high') # For hybrid partition
 
@@ -60,7 +66,7 @@ def run(config):
                         devices="auto",
                         precision='16-mixed',
                         logger=logger,
-                        callbacks=[checkpoint_callback, checkpoint_last])
+                        callbacks=[checkpoint_callback])
 
     trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=val_dataloader)
     trainer.test(model, dataloaders=test_dataloader, ckpt_path='best')

@@ -39,18 +39,18 @@ class scenarIA(Dataset):
         self.seed_subsets = config['data']['seed_subsets']
         self.nb_member_per_subsets = config['data']['nb_member_per_subsets']
         self.one_to_many = bool(config['data']['one_to_many'])
-        try :
-            self.simus = config['train'][f'simus_{data_type}']
-        except KeyError:
-            self.simus = None # for previous runs without simus_val in config
-            
-        if self.data_type == 'val' and self.simus is None:
-            self.simus = config['train']['simus_train']
-            valid_across_all_simus = True # Pick samples from all simulations for validation
+        
+        if config['train']['simus_val']:
+           valid_across_all_simus = False
+           self.simus = config['train'][f'simus_{data_type}']
         else:
-            valid_across_all_simus = False # One full time series simulation as validation
-
-        if isinstance(self.simus, str):
+            valid_across_all_simus = True
+            if data_type=='train' or data_type=='val':
+                self.simus = config['train']['simus_train']
+            else:
+                self.simus = config['train'][f'simus_{data_type}']
+        
+        if isinstance(self.simus, str): # need list
             self.simus = [self.simus]
 
         if data_type == 'test' or data_type == 'inference': # TODO concat historical
@@ -65,7 +65,6 @@ class scenarIA(Dataset):
         
         # if val_simus = None else shuffle only train data
         if valid_across_all_simus:
-
             nb_samples = self.inputs.shape[0]
             val_seq_length = nb_samples // int(nb_samples * self.val_size)
             val_idx = np.arange(nb_samples, step=val_seq_length)
@@ -80,6 +79,7 @@ class scenarIA(Dataset):
                 self.time = [self.time[i] for i in val_idx]
                 self.simus_all = [self.simus_all[i] for i in val_idx]
 
+            
             if data_type == 'train' or data_type == 'val':
                 rng = np.random.default_rng(self.seed)
                 perm = rng.permutation(self.inputs.shape[0])
@@ -87,7 +87,7 @@ class scenarIA(Dataset):
                 self.outputs = self.outputs[perm]
                 self.time = [self.time[i] for i in perm]
                 self.simus_all = [self.simus_all[i] for i in perm]
-
+            
         print('final inputs shape shuffle', self.inputs.shape)
         print('final outputs shape shuffle', self.outputs.shape if self.outputs is not None else None)
         print('time length shuffle', len(self.time), self.time[0])
@@ -142,6 +142,7 @@ class scenarIA(Dataset):
         outputs_all = []
         time_all = []
 
+        plt.figure()
         for i, simu in enumerate(self.simus):
             outputs_xr_ensemble = xr.open_dataset(self.dataset_path / f'outputs_{simu}.nc')[self.outputs_var_list]
             member_size = outputs_xr_ensemble.member.size
@@ -165,7 +166,7 @@ class scenarIA(Dataset):
                     hist_xr = xr.open_dataset(
                         self.dataset_path / f'outputs_historical.nc')[self.outputs_var_list].mean('member')
                     outputs_xr = xr.concat([hist_xr.isel(time=slice(-self.seq_length+1, None)), outputs_xr], dim='time')
-
+                
                 outputs, time = scenarIA.build_sequence_array_from_xr(
                     outputs_xr,
                     seq_length=self.seq_length,
@@ -174,7 +175,7 @@ class scenarIA(Dataset):
                 )
                 outputs_all.append(outputs)
                 time_all += time
-
+        
         self.outputs = np.concatenate(outputs_all, axis=0) if len(outputs_all) > 0 else np.array([])
         self.outputs = np.squeeze(self.outputs, axis=-1) # remove for multi variate ???
         self.time = time_all
@@ -321,7 +322,7 @@ def get_dataloaders(data_type: str, config:dict, transforms:bool=True) -> DataLo
 
     dataloader = DataLoader(dataset, 
                             batch_size=batch_size, 
-                            shuffle=shuffle,
+                            shuffle=False, # reshuffle at every epoch
                             num_workers=1)
     return dataloader
 
@@ -415,6 +416,6 @@ if __name__=='__main__':
         config = yaml.safe_load(file)
     
 
-    val_dataloader = get_dataloaders('val', config, transforms=False)
-    for x, y, t, simu in val_dataloader:
-        print(x.shape, y.shape, t, simu)
+    train_dataloader = get_dataloaders('train', config, transforms=True)
+    for x, y, t, simu in train_dataloader:
+        print(t, simu)

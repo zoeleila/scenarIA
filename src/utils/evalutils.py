@@ -510,7 +510,7 @@ def compare_metrics2(y, y_hat_dict, var_name, lats=None, title=None, save_dir=No
             metrics_values_mean = [metric_dict[metric][t].item() for t in test_names]
             print(f'{test_names} = {metrics_values_mean}')
 
-        plt.figure(figsize=(8, 4))
+        plt.figure(figsize=(10, 4))
         if is_list:
             plt.bar(test_names, metrics_values_mean,
                     yerr=[np.array(metrics_values_mean) - np.array(metrics_values_lower),

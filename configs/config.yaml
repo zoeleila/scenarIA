@@ -19,7 +19,7 @@ train: # for training
   seed: 42
   arch: 'cnn-lstm'
   learning_rate: 0.001
-  max_epochs: 30
+  max_epochs: 45
   batch_size: 4
   runs_dir: 'MPI-ESM1-2-LR/annual/exp1/'
   inputs: ['CO2', 'SO2', 'CH4', 'BC']
@@ -31,5 +31,6 @@ train: # for training
   img_size: [96, 192]
   scheduler_step_size: 50
   scheduler_gamma: 0.1
-  lstm_units: 64
+  lstm_units: 25
   monitor_metric: 'val_rmse' # for best checkpointing and hyperparameter optimization
+  early_stopping: 10
