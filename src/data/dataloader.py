@@ -11,6 +11,8 @@ import json
 import os
 from pathlib import Path
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+
 import copy
 
 
@@ -72,6 +74,8 @@ class scenarIA(Dataset):
             if self.data_type == 'train':
                 self.inputs = self.inputs[train_idx]
                 self.outputs = self.outputs[train_idx]
+                self.time = [self.time[i] for i in train_idx]
+                self.simus_all = [self.simus_all[i] for i in train_idx]
 
             elif self.data_type == 'val': 
                 self.inputs = self.inputs[val_idx]
@@ -142,7 +146,6 @@ class scenarIA(Dataset):
         outputs_all = []
         time_all = []
 
-        plt.figure()
         for i, simu in enumerate(self.simus):
             outputs_xr_ensemble = xr.open_dataset(self.dataset_path / f'outputs_{simu}.nc')[self.outputs_var_list]
             member_size = outputs_xr_ensemble.member.size
@@ -414,8 +417,30 @@ def plot_batchs(dataset, var_name, save_path, config_plots=None):
 if __name__=='__main__':
     with open(CONFIG_DIR / 'config.yaml') as file:
         config = yaml.safe_load(file)
-    
+    seed = 42
+    config['train']['seed'] = seed
 
-    train_dataloader = get_dataloaders('train', config, transforms=True)
-    for x, y, t, simu in train_dataloader:
-        print(t, simu)
+    train_dataset = scenarIA(transform=True,
+                            config=config,
+                            data_type='train')
+    time = train_dataset.time
+    time = [pd.to_datetime(t).year for t in time]
+    simus = train_dataset.simus_all
+    colors_dict = {'historical':'k',
+              'ssp126': 'green', 
+              'ssp370':'r', 
+              'ssp585': 'mediumorchid'}
+    colors = [colors_dict[simu] for simu in simus]
+ 
+    fig, ax = plt.subplots()
+    scatter = ax.scatter(np.arange(len(time)), time, c=colors)
+    legend_elements = [
+        Line2D([0], [0], marker='o', color='w', label=label,
+            markerfacecolor=color, markersize=8)
+        for label, color in colors_dict.items()
+    ]
+
+    ax.legend(handles=legend_elements, title="Simulations", loc='lower left')
+
+    fig.savefig(GRAPHS_DIR/f'test{seed}.png')
+    print(seed)

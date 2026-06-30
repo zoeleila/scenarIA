@@ -182,8 +182,8 @@ if __name__=='__main__':
     timescale = runs['timescale']
     #exp = runs['exp']
 
-    graph_dir = GRAPHS_DIR/f'tests'
-    title = runs['model_name'] + '_' + runs['timescale'] + 'exp1_ssp245_seq10_testversions'
+    graph_dir = GRAPHS_DIR/'tests'
+    title = runs['model_name'] + '_' + runs['timescale'] + '_exp1_ssp245_allseq_allmem'
 
     runs_dict = runs['compare']['runs_to_compare']
     eval_func = EvaluationPlots(config_plots=config_plots,

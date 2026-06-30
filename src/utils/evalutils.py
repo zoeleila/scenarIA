@@ -499,7 +499,9 @@ def compare_metrics2(y, y_hat_dict, var_name, lats=None, title=None, save_dir=No
     # --- Plotting ---
     for metric in metric_dict:
         test_names = list(metric_dict[metric].keys())
+                
         is_list = isinstance(metric_dict[metric][test_names[0]], list)
+        
 
         if is_list:
             metrics_values_mean  = [torch.tensor(metric_dict[metric][t]).mean().item()             for t in test_names]
@@ -510,7 +512,8 @@ def compare_metrics2(y, y_hat_dict, var_name, lats=None, title=None, save_dir=No
             metrics_values_mean = [metric_dict[metric][t].item() for t in test_names]
             print(f'{test_names} = {metrics_values_mean}')
 
-        plt.figure(figsize=(10, 4))
+        plt.figure(figsize=(12, 4))
+        test_names = [name.replace(' ', '\n', 1) for name in test_names]
         if is_list:
             plt.bar(test_names, metrics_values_mean,
                     yerr=[np.array(metrics_values_mean) - np.array(metrics_values_lower),

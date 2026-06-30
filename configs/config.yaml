@@ -10,7 +10,7 @@ data:
   piControl_diff: True
   predict_only_last_timestep: True
   timescale: 'annual'
-  seq_length: 10
+  seq_length: 5
   moving_window: 1
 
 
@@ -19,11 +19,11 @@ train: # for training
   seed: 42
   arch: 'cnn-lstm'
   learning_rate: 0.001
-  max_epochs: 45
+  max_epochs: 20
   batch_size: 4
   runs_dir: 'MPI-ESM1-2-LR/annual/exp1/'
   inputs: ['CO2', 'SO2', 'CH4', 'BC']
-  outputs: ['pr']
+  outputs: ['tas']
   simus_train: ['historical', 'ssp126', 'ssp370', 'ssp585']
   simus_val: null
   simus_test: ['ssp245']
