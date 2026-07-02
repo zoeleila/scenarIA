@@ -84,14 +84,14 @@ class scenarIA(Dataset):
                 self.simus_all = [self.simus_all[i] for i in val_idx]
 
             
-            if data_type == 'train' or data_type == 'val':
-                rng = np.random.default_rng(self.seed)
-                perm = rng.permutation(self.inputs.shape[0])
-                self.inputs = self.inputs[perm]
-                self.outputs = self.outputs[perm]
-                self.time = [self.time[i] for i in perm]
-                self.simus_all = [self.simus_all[i] for i in perm]
-            
+        if data_type == 'train' or (data_type == 'val' and valid_across_all_simus):
+            rng = np.random.default_rng(self.seed)
+            perm = rng.permutation(self.inputs.shape[0])
+            self.inputs = self.inputs[perm]
+            self.outputs = self.outputs[perm]
+            self.time = [self.time[i] for i in perm]
+            self.simus_all = [self.simus_all[i] for i in perm]
+        
         print('final inputs shape shuffle', self.inputs.shape)
         print('final outputs shape shuffle', self.outputs.shape if self.outputs is not None else None)
         print('time length shuffle', len(self.time), self.time[0])
@@ -154,7 +154,6 @@ class scenarIA(Dataset):
                 self.nb_member_per_subsets = member_size
 
             n_subsets = self.nb_subsets if self.one_to_many else 1
-
             for j in range(n_subsets):
                 if n_subsets == 1 and member_size <= self.nb_member_per_subsets:
                     outputs_xr = outputs_xr_ensemble.mean('member')
@@ -165,11 +164,11 @@ class scenarIA(Dataset):
                         self.nb_member_per_subsets,
                         mean=True
                     )
+
                 if self.data_type == 'test' and self.seq_length > 1:
                     hist_xr = xr.open_dataset(
                         self.dataset_path / f'outputs_historical.nc')[self.outputs_var_list].mean('member')
                     outputs_xr = xr.concat([hist_xr.isel(time=slice(-self.seq_length+1, None)), outputs_xr], dim='time')
-                
                 outputs, time = scenarIA.build_sequence_array_from_xr(
                     outputs_xr,
                     seq_length=self.seq_length,
@@ -325,7 +324,7 @@ def get_dataloaders(data_type: str, config:dict, transforms:bool=True) -> DataLo
 
     dataloader = DataLoader(dataset, 
                             batch_size=batch_size, 
-                            shuffle=False, # reshuffle at every epoch
+                            shuffle=shuffle, # reshuffle at every epoch
                             num_workers=1)
     return dataloader
 
@@ -417,30 +416,8 @@ def plot_batchs(dataset, var_name, save_path, config_plots=None):
 if __name__=='__main__':
     with open(CONFIG_DIR / 'config.yaml') as file:
         config = yaml.safe_load(file)
-    seed = 42
-    config['train']['seed'] = seed
 
-    train_dataset = scenarIA(transform=True,
-                            config=config,
-                            data_type='train')
-    time = train_dataset.time
-    time = [pd.to_datetime(t).year for t in time]
-    simus = train_dataset.simus_all
-    colors_dict = {'historical':'k',
-              'ssp126': 'green', 
-              'ssp370':'r', 
-              'ssp585': 'mediumorchid'}
-    colors = [colors_dict[simu] for simu in simus]
- 
-    fig, ax = plt.subplots()
-    scatter = ax.scatter(np.arange(len(time)), time, c=colors)
-    legend_elements = [
-        Line2D([0], [0], marker='o', color='w', label=label,
-            markerfacecolor=color, markersize=8)
-        for label, color in colors_dict.items()
-    ]
-
-    ax.legend(handles=legend_elements, title="Simulations", loc='lower left')
-
-    fig.savefig(GRAPHS_DIR/f'test{seed}.png')
-    print(seed)
+    train_dataloader = get_dataloaders(data_type='val', config=config, transforms=True)
+    for _, _, t, simu in train_dataloader:
+        print(t, simu)
+        

@@ -1,5 +1,5 @@
 data:
-  exp: 'exp1'
+  exp: 'exp6'
   model_name: 'MPI-ESM1-2-LR'
   raw_path: 'MPI-ESM1-2-LR/r1-r50i1p1f1/'
   dataset_path: 'MPI-ESM1-2-LR/annual/'
@@ -19,12 +19,12 @@ train: # for training
   seed: 42
   arch: 'cnn-lstm'
   learning_rate: 0.001
-  max_epochs: 20
+  max_epochs: 45
   batch_size: 4
-  runs_dir: 'MPI-ESM1-2-LR/annual/exp1/'
+  runs_dir: 'MPI-ESM1-2-LR/annual/exp6/'
   inputs: ['CO2', 'SO2', 'CH4', 'BC']
-  outputs: ['tas']
-  simus_train: ['historical', 'ssp126', 'ssp370', 'ssp585']
+  outputs: ['pr']
+  simus_train: ['historical', 'hist-aer', 'hist-GHG', 'ssp119', 'ssp126', 'ssp370', 'ssp585']
   simus_val: null
   simus_test: ['ssp245']
   simus_inference: ['ssp245']
