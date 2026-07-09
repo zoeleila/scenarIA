@@ -281,7 +281,8 @@ class scenarIALightningModule(pl.LightningModule):
         y_hat_all = torch.stack(self.test_step_outputs_hat, axis=0).view(-1, self.img_size[0], self.img_size[1])
         t_all = torch.cat(self.test_step_times).cpu().numpy()
 
-        self.log('test_nrmse', NRMSE_ClimateBench(y_hat_all, y_all, self.lats))
+        test_nrmse = NRMSE_ClimateBench(y_hat_all, y_all, self.lats)
+        self.log('test_nrmse', test_nrmse)
         self.log('loss', df['loss'].mean())
         spatial_corr = self.spatial_corr_metric.compute()
         self.log("test_corr", spatial_corr)
@@ -310,7 +311,7 @@ class scenarIALightningModule(pl.LightningModule):
             ax.plot(weighted_global_mean(y_hat_s, self.lats).cpu().numpy(), label='Predicted')
             ax.set_xlabel('time')
             ax.set_ylabel(f'{self.outputs} value')
-            ax.set_title(f'Test {simu_name} {t_s[0,0]:.0f}-{t_s[-1,0]:.0f}')
+            ax.set_title(f'Test {simu_name} {t_s[0,0]:.0f}-{t_s[-1,0]:.0f} – NRMSE : {test_nrmse:.4f}')
             ax.legend()
             self.logger.experiment.add_figure(f'Figure/test_true_vs_predicted_{simu_name}', fig)
 

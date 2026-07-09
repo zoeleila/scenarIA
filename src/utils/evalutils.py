@@ -196,7 +196,7 @@ class EvaluationPlots():
                  'True' : y_true,
                  'Prediction std' : y_pred_std, 
                  'Prediction - True': y_pred_mean - y_true}
-        fig, axes = plt.subplots(2, 2, figsize=(8,6), subplot_kw={'projection': ccrs.Robinson() })
+        fig, axes = plt.subplots(2, 2, figsize=(8,7), subplot_kw={'projection': ccrs.Robinson() })
         for ax, (name, map) in zip(axes.ravel(), values.items()):
             cmap = cmap_dict[name]
             if self.config_plots and no_limits is False:
@@ -512,7 +512,7 @@ def compare_metrics2(y, y_hat_dict, var_name, lats=None, title=None, save_dir=No
             metrics_values_mean = [metric_dict[metric][t].item() for t in test_names]
             print(f'{test_names} = {metrics_values_mean}')
 
-        plt.figure(figsize=(12, 4))
+        plt.figure(figsize=(10, 4))
         test_names = [name.replace(' ', '\n', 1) for name in test_names]
         if is_list:
             plt.bar(test_names, metrics_values_mean,

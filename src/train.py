@@ -1,7 +1,5 @@
-from ast import parse
 import random
 import numpy as np
-from traitlets import default
 import torch
 import yaml
 import argparse
@@ -66,7 +64,7 @@ def run(config):
                         devices="auto",
                         precision='16-mixed',
                         logger=logger,
-                        callbacks=[checkpoint_callback])
+                        callbacks=[checkpoint_callback, early_stopping])
 
     trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=val_dataloader)
     trainer.test(model, dataloaders=test_dataloader, ckpt_path='best')

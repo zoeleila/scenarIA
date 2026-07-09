@@ -1,5 +1,5 @@
 data:
-  exp: 'exp6'
+  exp: 'exp9'
   model_name: 'MPI-ESM1-2-LR'
   raw_path: 'MPI-ESM1-2-LR/r1-r50i1p1f1/'
   dataset_path: 'MPI-ESM1-2-LR/annual/'
@@ -19,18 +19,18 @@ train: # for training
   seed: 42
   arch: 'cnn-lstm'
   learning_rate: 0.001
-  max_epochs: 45
-  batch_size: 4
-  runs_dir: 'MPI-ESM1-2-LR/annual/exp6/'
-  inputs: ['CO2', 'SO2', 'CH4', 'BC']
+  max_epochs: 100
+  batch_size: 16
+  runs_dir: 'MPI-ESM1-2-LR/annual/exp9/'
+  inputs: ['CO2', 'SO2', 'CH4', 'BC', 'tau']
   outputs: ['pr']
-  simus_train: ['historical', 'hist-aer', 'hist-GHG', 'ssp119', 'ssp126', 'ssp370', 'ssp585']
-  simus_val: null
+  simus_train: ['historical', 'hist-nat', 'hist-aer', 'hist-GHG', 'ssp119', 'ssp126', 'ssp585']
+  simus_val: ['ssp370']
   simus_test: ['ssp245']
   simus_inference: ['ssp245']
   img_size: [96, 192]
   scheduler_step_size: 50
   scheduler_gamma: 0.1
-  lstm_units: 25
-  monitor_metric: 'val_rmse' # for best checkpointing and hyperparameter optimization
-  early_stopping: 10
+  lstm_units: 64
+  monitor_metric: 'val_nrmse' # for best checkpointing and hyperparameter optimization
+  early_stopping: 20

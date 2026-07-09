@@ -58,13 +58,13 @@ class scenarIA(Dataset):
         if data_type == 'test' or data_type == 'inference': # TODO concat historical
             self.one_to_many = False
 
+        print('1111', valid_across_all_simus, self.simus)
         self.load_inputs()
         if self.data_type == 'inference':
             self.outputs = None
         else:
             self.load_outputs()
 
-        
         # if val_simus = None else shuffle only train data
         if valid_across_all_simus:
             nb_samples = self.inputs.shape[0]
@@ -92,6 +92,7 @@ class scenarIA(Dataset):
             self.time = [self.time[i] for i in perm]
             self.simus_all = [self.simus_all[i] for i in perm]
         
+        print('after', self.simus_all)
         print('final inputs shape shuffle', self.inputs.shape)
         print('final outputs shape shuffle', self.outputs.shape if self.outputs is not None else None)
         print('time length shuffle', len(self.time), self.time[0])
@@ -108,10 +109,10 @@ class scenarIA(Dataset):
         simus_all = []
 
         for simu in self.simus:
-            inputs_xr = xr.open_dataset(self.dataset_path / f'inputs_{simu}_regrid2.nc')[self.inputs_var_list]
+            inputs_xr = xr.open_dataset(self.dataset_path / f'inputs_{simu}_regrid.nc')[self.inputs_var_list]
             if self.data_type == 'test' and self.seq_length > 1:
                 hist_xr = xr.open_dataset(
-                    self.dataset_path / f'inputs_historical_regrid2.nc')[self.inputs_var_list]
+                    self.dataset_path / f'inputs_historical_regrid.nc')[self.inputs_var_list]
                 inputs_xr = xr.concat([hist_xr.isel(time=slice(-self.seq_length+1, None)), inputs_xr], dim='time')
 
             for _ in range(self.nb_subsets if self.one_to_many else 1):
@@ -417,7 +418,6 @@ if __name__=='__main__':
     with open(CONFIG_DIR / 'config.yaml') as file:
         config = yaml.safe_load(file)
 
-    train_dataloader = get_dataloaders(data_type='val', config=config, transforms=True)
-    for _, _, t, simu in train_dataloader:
-        print(t, simu)
-        
+    dataset = scenarIA(transform=None,
+                       config=config,
+                       data_type='train')

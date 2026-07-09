@@ -196,7 +196,10 @@ def weighted_global_mean(data, lats=None, deg2rad=True, weights_normalization='s
     elif isinstance(data, xr.Dataset) or isinstance(data, xr.DataArray):
         data = standardize_dims_and_coords(data)
         weights = compute_weights_from_lats(data.lat, deg2rad=deg2rad, weights_normalization=weights_normalization)
-        data = data.weighted(weights).mean(['lat', 'lon'])
+        if 'lon' in data.coords:
+            data = data.weighted(weights).mean(['lat', 'lon'])
+        else:
+            data = data.weighted(weights).mean(['lat'])
     return data
     
 def apply_moving_average(x, window_size):

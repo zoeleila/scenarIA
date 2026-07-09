@@ -182,8 +182,8 @@ if __name__=='__main__':
     timescale = runs['timescale']
     #exp = runs['exp']
 
-    graph_dir = GRAPHS_DIR/'runs/MPI-ESM1-2-LR/annual/exp1/'
-    title = runs['model_name'] + '_' + runs['timescale'] + '_ssp245_configtest'
+    graph_dir = GRAPHS_DIR/'runs/MPI-ESM1-2-LR/annual/'
+    title = runs['model_name'] + '_' + runs['timescale'] + '_ssp245_configtest_lstm64_epoch=100'
 
     runs_dict = runs['compare']['runs_to_compare']
     eval_func = EvaluationPlots(config_plots=config_plots,
