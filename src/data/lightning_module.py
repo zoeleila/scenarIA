@@ -2,6 +2,7 @@
 
 """
 
+from pickletools import optimize
 import sys
 sys.path.append('.')
 
@@ -325,5 +326,12 @@ class scenarIALightningModule(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.RMSprop(self.parameters(), lr=self.learning_rate)
-        #scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=self.scheduler_step_size, gamma=self.scheduler_gamma)
-        return optimizer
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=self.scheduler_step_size, gamma=self.scheduler_gamma)
+        return {
+        "optimizer": optimizer,
+        "lr_scheduler": {
+            "scheduler": scheduler,
+            "interval": "epoch",
+            "monitor": self.monitor_metric
+        }
+    }

@@ -4,7 +4,7 @@ import torch
 import yaml
 import argparse
 from pytorch_lightning.loggers import TensorBoardLogger
-from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
+from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping, LearningRateMonitor
 import pytorch_lightning as pl
 
 from scenarIA.src.data.dataloader import get_dataloaders
@@ -27,15 +27,20 @@ def run(config):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
+    # Data
     train_dataloader = get_dataloaders('train', config)
     val_dataloader = get_dataloaders('val', config)
     test_dataloader = get_dataloaders('test', config)
 
+    # Model
     model = scenarIALightningModule(config, lats=torch.tensor(lats))
 
+    # Logger
     logger = TensorBoardLogger(save_dir=RUNS_DIR / config['train']['runs_dir'], 
                                name='lightning_logs',
                                default_hp_metric=False)
+    
+    # Callbacks
     monitor = config['train']['monitor_metric']
 
     checkpoint_callback = ModelCheckpoint(
@@ -54,6 +59,8 @@ def run(config):
         check_finite=True,   # arrête si val_rmse devient NaN ou inf
     )
 
+    lr_monitor = LearningRateMonitor(logging_interval='epoch')
+
 
     torch.set_float32_matmul_precision('high') # For hybrid partition
 
@@ -64,7 +71,7 @@ def run(config):
                         devices="auto",
                         precision='16-mixed',
                         logger=logger,
-                        callbacks=[checkpoint_callback, early_stopping])
+                        callbacks=[checkpoint_callback, early_stopping, lr_monitor])
 
     trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=val_dataloader)
     trainer.test(model, dataloaders=test_dataloader, ckpt_path='best')
