@@ -1,5 +1,5 @@
 data:
-  exp: 'exp5'
+  exp: 'exp9'
   model_name: 'MPI-ESM1-2-LR'
   raw_path: 'MPI-ESM1-2-LR/r1-r50i1p1f1/'
   dataset_path: 'MPI-ESM1-2-LR/annual/'
@@ -10,21 +10,21 @@ data:
   piControl_diff: True
   predict_only_last_timestep: True
   timescale: 'annual'
-  seq_length: 5
+  seq_length: 1
   moving_window: 1
 
 
 train: # for training
   val_size: 0.2 # in case simus_val is None
   seed: 42
-  arch: 'cnn-lstm'
-  learning_rate: 0.0008
+  arch: 'unet'
+  learning_rate: 0.0001
   max_epochs: 100
-  batch_size: 16
-  runs_dir: 'MPI-ESM1-2-LR/annual/exp5/'
-  inputs: ['CO2', 'SO2', 'CH4', 'BC']
+  batch_size: 8
+  runs_dir: 'MPI-ESM1-2-LR/annual/exp9/'
+  inputs: ['CO2', 'SO2', 'CH4', 'BC', 'tau']
   outputs: ['pr']
-  simus_train: ['historical', 'hist-aer', 'hist-GHG', 'ssp119', 'ssp126', 'ssp585']
+  simus_train: ['historical', 'hist-nat', 'hist-aer', 'hist-GHG', 'ssp119', 'ssp126', 'ssp585']
   simus_val: ['ssp370']
   simus_test: ['ssp245']
   simus_inference: ['ssp245']

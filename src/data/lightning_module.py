@@ -3,6 +3,8 @@
 """
 
 from pickletools import optimize
+from re import M
+from sched import scheduler
 import sys
 sys.path.append('.')
 
@@ -18,6 +20,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from torchmetrics import PearsonCorrCoef, MeanSquaredError, MeanAbsoluteError
 
+from scenarIA.src.models.unet import UNet
+from scenarIA.src.models.miniunet import MiniUNet
+from scenarIA.src.models.time_unet import time_UNet
 from scenarIA.src.models.CNNLSTM import CNNLSTMModel
 from scenarIA.src.utils.losses import LLweighted_MSELoss_Climax
 from scenarIA.src.utils.metrics import NRMSE_ClimateBench, LatWeightedRMSEMetric
@@ -101,6 +106,26 @@ class scenarIALightningModule(pl.LightningModule):
             case 'cnn-lstm':
                 self.model = CNNLSTMModel(self.seq_length, height=self.img_size[0], width=self.img_size[1], channels=len(self.inputs),
                                           output_seq_len=output_seq_len, lstm_units=self.lstm_units).float()
+            case 'unet':
+                # variables and timesteps are concatenated in the channel dimension
+                self.model = UNet(in_channels=len(self.inputs)*self.seq_length, 
+                                  out_channels=len(self.outputs)*output_seq_len, init_features=32).float()
+            case 'miniunet':
+                self.model = MiniUNet(in_channels=len(self.inputs)*self.seq_length, 
+                                      out_channels=len(self.outputs)*output_seq_len, init_features=32).float()
+                
+            case 'time-unet':
+                self.model = time_UNet(
+                    in_var_ids=self.inputs,
+                    out_var_ids=self.outputs,
+                    longitude=self.img_size[1],
+                    latitude=self.img_size[0],
+                    activation_function=None,
+                    datamodule_config=None,
+                    channels_last=True,
+                    seq_to_seq=not self.predict_only_last_timestep,
+                    seq_len=self.seq_length,
+                ).float()
 
     def forward(self, x):
         return self.model(x) 
@@ -113,10 +138,19 @@ class scenarIALightningModule(pl.LightningModule):
         self.epoch_start_time = time.time()
 
     def common_step(self, x, y):
+        if self.arch == 'unet' or self.arch == 'miniunet':
+            x = x.permute(0, 2, 3, 4, 1)      # (b, lat, lon, variable, time)
+            x = x.contiguous()                 # nécessaire car permute ne fait que réordonner les strides
+            x = x.view(x.size(0), x.size(1), x.size(2), x.size(3)*x.size(4)) # (B, lat, lon, C, T) --> (B, lat, lon, T*C)
+            #x = x.view(x.size(0), x.size(2), x.size(3), x.size(1)*x.size(4)) # (B, T, lat, lon, C) --> (B, lat, lon, T*C)
+        
         y_hat = self(x)
-        #if y.shape[-1] == 1:
-            #y = y.squeeze(-1)
-            #y_hat = y_hat.squeeze(-1)
+        
+        if self.arch == 'unet' or self.arch == 'miniunet':
+            y_hat = y_hat.unsqueeze(1) # (B, lat, lon, C) --> (B, 1, lat, lon, C)
+        if y_hat.size(-1) == 1:
+            y_hat = y_hat.squeeze(-1)
+
         loss = self.loss(y_hat, y) # if len(var) == 1, squeeze, else : loop on variables
         return y_hat, loss
 
@@ -231,6 +265,7 @@ class scenarIALightningModule(pl.LightningModule):
             
         batch_dict = {"loss": loss}
         for metric_name, metric in self.metrics_dict.items():
+            print(y_hat.shape, y.shape)
             metric.update(y_hat, y)
             batch_dict[metric_name] = metric.compute()
             self.logger.experiment.add_scalar(metric_name, metric.compute(), batch_idx)
@@ -325,7 +360,8 @@ class scenarIALightningModule(pl.LightningModule):
                                 save_path=Path(self.logger.log_dir) / f'error_maps_{simu_name}.png')
 
     def configure_optimizers(self):
-        optimizer = torch.optim.RMSprop(self.parameters(), lr=self.learning_rate)
+        #optimizer = torch.optim.RMSprop(self.parameters(), lr=self.learning_rate)
+        optimizer = torch.optim.AdamW(self.parameters(), lr=self.learning_rate, weight_decay=1e-5)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=self.scheduler_step_size, gamma=self.scheduler_gamma)
         return {
         "optimizer": optimizer,

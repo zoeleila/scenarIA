@@ -7,44 +7,35 @@ from collections import OrderedDict
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import yaml
 
-from scenarIA.src.data.dataloader import get_dataloaders
-from scenarIA.src.utils.settings import CONFIG_DIR
 
-class UNet(nn.Module):
+class MiniUNet(nn.Module):
+
     def __init__(self, in_channels, out_channels=1, init_features=32):
-        super(UNet, self).__init__()
+        super(MiniUNet, self).__init__()
 
         features = init_features
-        self.encoder1 = UNet._block(in_channels, features, name="enc1")
+        self.encoder1 = MiniUNet._block(in_channels, features, name="enc1")
         self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.encoder2 = UNet._block(features, features * 2, name="enc2")
+        self.encoder2 = MiniUNet._block(features, features * 2, name="enc2")
         self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.encoder3 = UNet._block(features * 2, features * 4, name="enc3")
+        self.encoder3 = MiniUNet._block(features * 2, features * 4, name="enc3")
         self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.encoder4 = UNet._block(features * 4, features * 8, name="enc4")
-        self.pool4 = nn.MaxPool2d(kernel_size=2, stride=2)
 
-        
-        self.bottleneck = UNet._block(features * 8, features * 16, name="bottleneck")
+        self.bottleneck = MiniUNet._block(features * 4, features * 8, name="bottleneck") ##minMiniUNet
 
-        self.upconv4 = nn.ConvTranspose2d(
-            features * 16, features * 8, kernel_size=2, stride=2
-        )
-        self.decoder4 = UNet._block((features * 8) * 2, features * 8, name="dec4")
         self.upconv3 = nn.ConvTranspose2d(
             features * 8, features * 4, kernel_size=2, stride=2
         )
-        self.decoder3 = UNet._block((features * 4) * 2, features * 4, name="dec3")
+        self.decoder3 = MiniUNet._block((features * 4) * 2, features * 4, name="dec3")
         self.upconv2 = nn.ConvTranspose2d(
             features * 4, features * 2, kernel_size=2, stride=2
         )
-        self.decoder2 = UNet._block((features * 2) * 2, features * 2, name="dec2")
+        self.decoder2 = MiniUNet._block((features * 2) * 2, features * 2, name="dec2")
         self.upconv1 = nn.ConvTranspose2d(
             features * 2, features, kernel_size=2, stride=2
         )
-        self.decoder1 = UNet._block(features * 2, features, name="dec1")
+        self.decoder1 = MiniUNet._block(features * 2, features, name="dec1")
 
         self.conv = nn.Conv2d(
             in_channels=features, out_channels=out_channels, kernel_size=1
@@ -57,6 +48,7 @@ class UNet(nn.Module):
         x = F.pad(x, (0, pad_w, 0, pad_h), mode="reflect")
         return x, (h, w)
 
+    
     def forward(self, x):
         x = x.permute(0, 3, 1, 2) # change to (B, C, H, W)
         x, (h, w) = self._pad_(x)
@@ -64,14 +56,8 @@ class UNet(nn.Module):
         enc1 = self.encoder1(x)
         enc2 = self.encoder2(self.pool1(enc1))
         enc3 = self.encoder3(self.pool2(enc2))
-        enc4 = self.encoder4(self.pool3(enc3))
-
-        bottleneck = self.bottleneck(self.pool4(enc4))
-
-        dec4 = self.upconv4(bottleneck)
-        dec4 = torch.cat((dec4, enc4), dim=1)
-        dec4 = self.decoder4(dec4)
-        dec3 = self.upconv3(dec4)
+        bottleneck = self.bottleneck(self.pool3(enc3))
+        dec3 = self.upconv3(bottleneck) 
         dec3 = torch.cat((dec3, enc3), dim=1)
         dec3 = self.decoder3(dec3)
         dec2 = self.upconv2(dec3)
@@ -82,7 +68,7 @@ class UNet(nn.Module):
         dec1 = self.decoder1(dec1)
         out = self.conv(dec1)
         out = out[:, :, :h, :w]
-        return torch.relu(out).permute(0, 2, 3, 1)  # change back to (B, H, W, C)
+        return out.permute(0, 2, 3, 1)  # change back to (B, H, W, C)
 
 
     @staticmethod
@@ -117,20 +103,3 @@ class UNet(nn.Module):
                 ]
             )
         )
-
-
-
-if __name__=='__main__':
-    model = UNet(in_channels=20, out_channels=1, init_features=32).float()
-    with open(CONFIG_DIR / 'config.yaml') as file:
-        config = yaml.safe_load(file)
-
-    train_dataloader = get_dataloaders('test', config)
-    first_batch = next(iter(train_dataloader))
-    # (B, T, lat, lon, C) --> (B, lat, lon, T*C)
-    x, y, _, _ = first_batch
-    x = x.view(1, 96, 192, 5*4).cuda().float()
-    print(x.shape, y.shape)
-    y_hat = model(x)
-    print('yhat',y_hat.shape)
-    

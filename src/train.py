@@ -53,7 +53,7 @@ def run(config):
 
     early_stopping = EarlyStopping(
         monitor=monitor,
-        patience=config['train'].get('early_stopping_patience', 10),
+        patience=config['train']['early_stopping'],
         mode='min',
         verbose=True,
         check_finite=True,   # arrête si val_rmse devient NaN ou inf
