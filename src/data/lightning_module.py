@@ -128,7 +128,16 @@ class scenarIALightningModule(pl.LightningModule):
                 ).float()
 
     def forward(self, x):
-        return self.model(x) 
+        if self.arch == 'unet' or self.arch == 'miniunet':
+            x = x.permute(0, 2, 3, 4, 1)      # (b, lat, lon, variable, time)
+            x = x.contiguous()                 # nécessaire car permute ne fait que réordonner les strides
+            x = x.view(x.size(0), x.size(1), x.size(2), x.size(3)*x.size(4)) # (B, lat, lon, C, T) --> (B, lat, lon, T*C)
+        y_hat = self.model(x)
+        if self.arch == 'unet' or self.arch == 'miniunet':
+            y_hat = y_hat.unsqueeze(1) # (B, lat, lon, C) --> (B, 1, lat, lon, C)
+        if y_hat.size(-1) == 1:
+            y_hat = y_hat.squeeze(-1)
+        return y_hat
 
     def on_train_start(self):
         self.logger.experiment.add_custom_scalars(layout)
@@ -138,19 +147,7 @@ class scenarIALightningModule(pl.LightningModule):
         self.epoch_start_time = time.time()
 
     def common_step(self, x, y):
-        if self.arch == 'unet' or self.arch == 'miniunet':
-            x = x.permute(0, 2, 3, 4, 1)      # (b, lat, lon, variable, time)
-            x = x.contiguous()                 # nécessaire car permute ne fait que réordonner les strides
-            x = x.view(x.size(0), x.size(1), x.size(2), x.size(3)*x.size(4)) # (B, lat, lon, C, T) --> (B, lat, lon, T*C)
-            #x = x.view(x.size(0), x.size(2), x.size(3), x.size(1)*x.size(4)) # (B, T, lat, lon, C) --> (B, lat, lon, T*C)
-        
         y_hat = self(x)
-        
-        if self.arch == 'unet' or self.arch == 'miniunet':
-            y_hat = y_hat.unsqueeze(1) # (B, lat, lon, C) --> (B, 1, lat, lon, C)
-        if y_hat.size(-1) == 1:
-            y_hat = y_hat.squeeze(-1)
-
         loss = self.loss(y_hat, y) # if len(var) == 1, squeeze, else : loop on variables
         return y_hat, loss
 

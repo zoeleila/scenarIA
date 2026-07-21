@@ -171,6 +171,7 @@ if __name__=='__main__':
     argparser.add_argument("--simus_test", type=str, default='ssp245')
     argparser.add_argument("--var_name", type=str, default='pr')
     args = argparser.parse_args()
+    simus_test = args.simus_test
     var_name = args.var_name
 
     with open(CONFIG_DIR / 'runs.yaml') as file:
@@ -182,8 +183,8 @@ if __name__=='__main__':
     timescale = runs['timescale']
     #exp = runs['exp']
 
-    graph_dir = GRAPHS_DIR/'runs/MPI-ESM1-2-LR/annual/'
-    title = runs['model_name'] + '_' + runs['timescale'] + '_ssp245_configtest_lstm64_epoch=100'
+    graph_dir = GRAPHS_DIR/'runs/MPI-ESM1-2-LR/annual/exp9'
+    title = runs['model_name'] + '_' + runs['timescale'] + '_' + simus_test + '_cnn-lstm_unet'
 
     runs_dict = runs['compare']['runs_to_compare']
     eval_func = EvaluationPlots(config_plots=config_plots,

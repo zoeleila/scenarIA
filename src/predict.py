@@ -98,6 +98,10 @@ def save_predictions_as_netcdf(runs_to_predict, data_type='test', simus_to_predi
     
 
 if __name__=='__main__':
+    argparser = argparse.ArgumentParser(description="Compare different runs")
+    argparser.add_argument("--simus_to_predict", type=str, default='ssp245')
+    args = argparser.parse_args()
+
     with open(CONFIG_DIR / 'runs.yaml') as file:
         runs = yaml.safe_load(file)
     runs_to_predict_dict = runs['predict']
@@ -105,5 +109,5 @@ if __name__=='__main__':
         runs_to_predict = runs_to_predict_dict[exp_name]
         save_predictions_as_netcdf(runs_to_predict, 
                                data_type='test', 
-                               simus_to_predict='ssp245', 
+                               simus_to_predict=args.simus_to_predict, 
                                best_checkpoint=True)

@@ -82,7 +82,7 @@ class UNet(nn.Module):
         dec1 = self.decoder1(dec1)
         out = self.conv(dec1)
         out = out[:, :, :h, :w]
-        return torch.relu(out).permute(0, 2, 3, 1)  # change back to (B, H, W, C)
+        return out.permute(0, 2, 3, 1)  # change back to (B, H, W, C)
 
 
     @staticmethod

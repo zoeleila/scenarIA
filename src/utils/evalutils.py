@@ -209,7 +209,7 @@ class EvaluationPlots():
             else: 
                 lim = [None, None]
                 levels=None
-            print(map.shape)
+
             cs = ax.contourf(map,
                      cmap=cmap,
                      levels=levels,
@@ -284,6 +284,7 @@ class EvaluationPlots():
                 lim = self.config_plots['lim']['mean_error'] if self.config_plots else [None, None]
 
             levels = np.linspace(lim[0], lim[1], 11) if lim[0] is not None else None
+
             cs = ax.contourf(data_to_plot,
                              cmap=cmap,
                              levels=levels,
