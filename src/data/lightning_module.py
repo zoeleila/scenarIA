@@ -120,7 +120,7 @@ class scenarIALightningModule(pl.LightningModule):
                     out_var_ids=self.outputs,
                     longitude=self.img_size[1],
                     latitude=self.img_size[0],
-                    activation_function=None,
+                    activation_function=nn.ReLU,
                     datamodule_config=None,
                     channels_last=True,
                     seq_to_seq=not self.predict_only_last_timestep,

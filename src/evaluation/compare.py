@@ -188,11 +188,11 @@ if __name__=='__main__':
 
     runs_dict = runs['compare']['runs_to_compare']
     eval_func = EvaluationPlots(config_plots=config_plots,
-                                simulation_name=None,
+                                simulation_name=simus_test,
                                 var_name=var_name)
     
     y, y_hat_dict, t = compare_tests(runs_dict,
-                               simus_test=None,
+                               simus_test=simus_test,
                                var_name=var_name,
                                eval_func=None,
                                plot_save_dir=None)

@@ -1,4 +1,5 @@
-''' U-NET FOR BRAIN MRI '''
+''' U-NET FOR BRAIN MRI 
+https://github.com/mateuszbuda/brain-segmentation-pytorch/blob/master/unet.py'''
 
 import sys
 sys.path.append('.')
