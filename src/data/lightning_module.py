@@ -1,10 +1,6 @@
 """
 
 """
-
-from pickletools import optimize
-from re import M
-from sched import scheduler
 import sys
 sys.path.append('.')
 
@@ -18,6 +14,7 @@ import numpy as np
 import pytorch_lightning as pl
 import pandas as pd
 import matplotlib.pyplot as plt
+import segmentation_models_pytorch as smp
 from torchmetrics import PearsonCorrCoef, MeanSquaredError, MeanAbsoluteError
 
 from scenarIA.src.models.unet import UNet
@@ -108,8 +105,16 @@ class scenarIALightningModule(pl.LightningModule):
                                           output_seq_len=output_seq_len, lstm_units=self.lstm_units).float()
             case 'unet':
                 # variables and timesteps are concatenated in the channel dimension
-                self.model = UNet(in_channels=len(self.inputs)*self.seq_length, 
-                                  out_channels=len(self.outputs)*output_seq_len, init_features=32).float()
+                #self.model = UNet(in_channels=len(self.inputs)*self.seq_length, 
+                #                  out_channels=len(self.outputs)*output_seq_len, init_features=32).float()
+                self.model = smp.Unet(
+                        encoder_name='vgg11',
+                        encoder_weights=None,
+                        in_channels=len(self.inputs)*self.seq_length,
+                        classes=len(self.outputs)*output_seq_len,
+                        encoder_depth = 5,
+                        activation='identity',
+                    )
             case 'miniunet':
                 self.model = MiniUNet(in_channels=len(self.inputs)*self.seq_length, 
                                       out_channels=len(self.outputs)*output_seq_len, init_features=32).float()
@@ -132,9 +137,10 @@ class scenarIALightningModule(pl.LightningModule):
             x = x.permute(0, 2, 3, 4, 1)      # (b, lat, lon, variable, time)
             x = x.contiguous()                 # nécessaire car permute ne fait que réordonner les strides
             x = x.view(x.size(0), x.size(1), x.size(2), x.size(3)*x.size(4)) # (B, lat, lon, C, T) --> (B, lat, lon, T*C)
+            x = x.permute((0, 3, 1, 2)) # conv2d needs (B, C, lat, lon)
         y_hat = self.model(x)
-        if self.arch == 'unet' or self.arch == 'miniunet':
-            y_hat = y_hat.unsqueeze(1) # (B, lat, lon, C) --> (B, 1, lat, lon, C)
+        #if self.arch == 'unet' or self.arch == 'miniunet':
+        #    y_hat = y_hat.unsqueeze(1) # (B, lat, lon, C) --> (B, 1, lat, lon, C)
         if y_hat.size(-1) == 1:
             y_hat = y_hat.squeeze(-1)
         return y_hat
@@ -314,7 +320,7 @@ class scenarIALightningModule(pl.LightningModule):
         y_hat_all = torch.stack(self.test_step_outputs_hat, axis=0).view(-1, self.img_size[0], self.img_size[1])
         t_all = torch.cat(self.test_step_times).cpu().numpy()
 
-        test_nrmse = NRMSE_ClimateBench(y_hat_all, y_all, self.lats)
+        test_nrmse = NRMSE_ClimateBench(y_hat_all, y_all, self.lats) # all time period
         self.log('test_nrmse', test_nrmse)
         self.log('loss', df['loss'].mean())
         spatial_corr = self.spatial_corr_metric.compute()

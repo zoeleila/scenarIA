@@ -109,7 +109,7 @@ class time_UNet(nn.Module):
                         encoder_weights=None,
                         in_channels=self.num_input_vars,
                         classes=self.num_output_vars,
-                        activation=activation_function,
+                        activation=activation_function
                     )
                 ),
                 torch.nn.Flatten(),

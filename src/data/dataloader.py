@@ -1,3 +1,4 @@
+from pkgutil import get_data
 from torch.utils.data import Dataset, DataLoader
 from torchvision.transforms import v2
 import numpy as np
@@ -291,7 +292,7 @@ def get_dataloaders(data_type: str, config:dict, transforms:bool=True) -> DataLo
     seed = config['train']['seed']
     if transforms:
         runs_dir = RUNS_DIR / config['train']['runs_dir']
-        statistic_file =  runs_dir.parent / 'statistics.json' # only data settings
+        statistic_file =  runs_dir / 'statistics.json' # only data settings
         if not statistic_file.exists():
             stats = compute_statistics(copy.deepcopy(config), seeds=seed)
         else:
@@ -299,8 +300,8 @@ def get_dataloaders(data_type: str, config:dict, transforms:bool=True) -> DataLo
                stats = json.load(f)
         if str(seed) not in stats:
            stats = compute_statistics(copy.deepcopy(config), seeds=seed)
-        
         piControl_diff = bool(config['data']['piControl_diff'])
+        add_clim_to_predictors = bool(config['data']['add_clim_to_predictors'])
         if piControl_diff:
             climatology = get_climatology(config)
             climatology = torch.tensor(climatology, dtype=torch.float32).squeeze()
@@ -308,7 +309,8 @@ def get_dataloaders(data_type: str, config:dict, transforms:bool=True) -> DataLo
             climatology = None
         transforms = v2.Compose([ToTensor(),
                                  Normalize(stats = stats[str(seed)]),
-                                 DiffClimatology(climatology=climatology)])
+                                 DiffClimatology(climatology=climatology, 
+                                                 add_clim_to_predictors=add_clim_to_predictors)])
     else:
         transforms = v2.Compose([ToTensor()])
     
@@ -418,6 +420,12 @@ if __name__=='__main__':
     with open(CONFIG_DIR / 'config.yaml') as file:
         config = yaml.safe_load(file)
 
-    dataset = scenarIA(transform=None,
-                       config=config,
-                       data_type='train')
+    dataloader = get_dataloaders('train', config=config)
+    for x, y, _, _ in dataloader:
+        plt.figure()
+        plt.contourf(x[0,0,:,:,-1])
+        plt.colorbar()
+        plt.savefig(GRAPHS_DIR/'test.png')
+        
+        print(x.shape)
+        break

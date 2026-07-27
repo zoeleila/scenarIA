@@ -182,7 +182,7 @@ class EvaluationPlots():
             y_true = y_true.mean(axis=0)
             y_pred_mean = y_pred_mean.mean(axis=0)
             y_pred_std = y_pred_std.mean(axis=0)
-
+        
         if self.config_plots:
             cmap_dict = {'Prediction mean' : self.config_plots['cmap']['values'], 
                  'True' : self.config_plots['cmap']['values'],

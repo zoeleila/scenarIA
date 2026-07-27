@@ -3,6 +3,7 @@ from torch import Tensor
 import numpy as np
 import json
 
+
 class ToTensor:
     """Convert ndarrays in sample to Tensors."""
     def __call__(self, sample: tuple[np.ndarray, np.ndarray]) -> tuple[Tensor, Tensor]:
@@ -37,10 +38,11 @@ class DeNormlize:
     
 class DiffClimatology: # a modifier
     """Subtract climatology from tensor sample."""
-    def __init__(self, climatology=None):
+    def __init__(self, climatology=None, add_clim_to_predictors=False):
         # climatology: Tensor of shape (lat, lon, channels)
 
         self.climatology = climatology # TODO change for multivariate
+        self.add_clim_to_predictors = add_clim_to_predictors
 
     def __call__(self, sample: tuple[Tensor, Tensor]) -> tuple[Tensor, Tensor]:
         # y shape: (time, lat, lon, channels)
@@ -49,8 +51,14 @@ class DiffClimatology: # a modifier
             return x, y
         else:
             y = y - self.climatology
+            if self.add_clim_to_predictors:
+                mean = self.climatology.mean()
+                std = self.climatology.std()
+                self.clim_normalized = (self.climatology - mean) / (std + 1e-8)
+                clim = self.clim_normalized[None, :, :, None].expand(x.shape[0], -1, -1, -1)
+                x = torch.cat((x, clim), dim=-1)
             return x, y
-    
+
 
 # padding
 # inerpol
