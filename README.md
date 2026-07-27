@@ -78,10 +78,15 @@ Dans le cas d'une série d'entraînements:
 python src/main.py
 ```
 
+Les informations relatives à l'entraînement ainsi que les poids du modèle sont sauvegardés dans le dossier de l'expérience. Le suivi des métriques est disponible sur tensorboard.
+```
+tensorboard --logdir=.
+```
+
 ### Prediction
 Le scipt `predict.py` récupère le chemin du modèle entrainé choisi dans le fichier `runs.yaml` pour prédire une nouvelle trajectoire qui sera sauvegardé dans un fichier NETCDF.
 
-Afin d'étudier la robustesse de notre méthode, on entraîne 10 réseaux différents avec différents mélanges de données d'entrainement. Le script `predict.py` permet d'ajouter une dimension 'runs' au fichier NETCDF qui correspond aux différentes seeds.
+Afin d'étudier la robustesse de notre méthode, on entraîne 10 réseaux différents avec différents mélanges de données d'entrainement. Le script `predict.py` permet d'ajouter la dimension 'runs' au fichier NETCDF qui correspond aux différentes seeds.
 
 ```
 python src/predict.py
