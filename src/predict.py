@@ -25,6 +25,8 @@ def predict(run_dir,
     model = scenarIALightningModule.load_from_checkpoint(checkpoint_dir, map_location='cpu')
     model.eval()
     hparams = model.hparams['config']
+    if 'climatology' in hparams['train']['inputs']: # for a specific run ...
+        hparams['train']['inputs'] = hparams['train']['inputs'][:-1]
     if simus_to_predict is not None:
         hparams['train'][f'simus_{data_type}'] = [simus_to_predict]
     dataloader = get_dataloaders(data_type, config=hparams)
@@ -52,7 +54,7 @@ def predict(run_dir,
         t_all = pd.to_datetime(t_all, format="%Y-%m-%d")
         return y_hat_all, y_all, t_all, hparams
 
-def save_predictions_as_netcdf(runs_to_predict, data_type='test', simus_to_predict=None, best_checkpoint=True):
+def save_predictions_as_netcdf(runs_to_predict, data_type='test', simus_to_predict=None, best_checkpoint=True, exp_name=''):
     runs_to_predict = [runs_to_predict] if isinstance(runs_to_predict, str) else runs_to_predict
     y_hat_all_list = []
     seed_list = []
@@ -92,7 +94,7 @@ def save_predictions_as_netcdf(runs_to_predict, data_type='test', simus_to_predi
     exp = hparams['data']['exp']
     simu_test = hparams['train']['simus_test'][0]
     max_epochs = hparams['train']['max_epochs']
-    filename = f'{model_name}_{timescale}_{exp}_{simu_test}_{test_name}_epoch{max_epochs}.nc'
+    filename = f'{model_name}_{timescale}_{exp}_{simu_test}_{test_name}_epoch{max_epochs}{exp_name}.nc'
     os.makedirs(PREDICTIONS_DIR / model_name / timescale / exp, exist_ok=True)
     ds.to_netcdf(PREDICTIONS_DIR / model_name / timescale / exp / filename) # create directories if they don't exist
     
@@ -110,4 +112,5 @@ if __name__=='__main__':
         save_predictions_as_netcdf(runs_to_predict, 
                                data_type='test', 
                                simus_to_predict=args.simus_to_predict, 
-                               best_checkpoint=True)
+                               best_checkpoint=True,
+                               exp_name=exp_name)

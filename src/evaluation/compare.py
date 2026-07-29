@@ -9,7 +9,7 @@ import argparse
 import pandas as pd
 
 from scenarIA.src.utils.settings import CONFIG_DIR, GRAPHS_DIR, RUNS_DIR, DATASET_DIR
-from scenarIA.src.utils.evalutils import EvaluationPlots, compare_metric_maps2, compare_metrics2, compare_temporal_profiles
+from scenarIA.src.utils.evalutils import EvaluationPlots, compare_metrics, compare_metrics_maps, compare_temporal_profiles
 from scenarIA.src.predict import predict
 from scenarIA.src.utils.metrics import NRMSE_ClimateBench, NRMSE_g_ClimateBench, NRMSE_s_ClimateBench, LatWeightedRMSEMetric
 
@@ -184,8 +184,8 @@ if __name__=='__main__':
     #exp = runs['exp']
 
     graph_dir = GRAPHS_DIR/'runs/MPI-ESM1-2-LR/annual/exp9'
-    title = runs['model_name'] + '_' + runs['timescale'] + '_' + simus_test + '_cnn-lstm_unet'
-
+    title_base = runs['model_name'] + '_' + runs['timescale'] + '_' + simus_test + '_2080_2100'
+    title = title_base + '_benchmarkv1'
     runs_dict = runs['compare']['runs_to_compare']
     eval_func = EvaluationPlots(config_plots=config_plots,
                                 simulation_name=simus_test,
@@ -197,7 +197,37 @@ if __name__=='__main__':
                                eval_func=None,
                                plot_save_dir=None)
     lats = dict(np.load(DATASET_DIR / model_name / timescale / 'coords.npz', allow_pickle=True))['lat']
-    compare_metrics2(y, y_hat_dict, lats=lats, var_name=var_name, title=title, save_dir=graph_dir, 
-     ensemble_scoring='mean_of_scores')
+    for key, value in y_hat_dict.items():
+        mini_dict = {key:value}
+        compare_temporal_profiles(y, 
+                                mini_dict, 
+                                t, 
+                                var_name, 
+                                lats, 
+                                point=None, 
+                                window_size=None, 
+                                config_plots=None, 
+                                title=title_base + f'_{key}', 
+                                save_dir=graph_dir)
+    # end of century for ssp evaluation
+    y = y[-21:, :, :]
+    for key, y_hat in y_hat_dict.items(): 
+        y_hat_dict[key] = [i[-21:,:,:] for i in y_hat]
+        y_hat_dict[key][0].shape
+    
+    compare_metrics(y, 
+                    y_hat_dict, 
+                    lats=lats, 
+                    var_name=var_name, 
+                    title=title, 
+                    save_dir=graph_dir, 
+                    ensemble_scoring='mean_of_scores')
+    # stack
+    compare_metrics_maps(y, 
+                        y_hat_dict, 
+                        var_name=var_name, 
+                        title=title, 
+                        save_dir=graph_dir,
+                        config_plots=config_plots)
 
     

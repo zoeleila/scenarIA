@@ -1,3 +1,5 @@
+import gc
+import torch
 import yaml, copy, itertools
 
 from scenarIA.src.utils.settings import CONFIG_DIR
@@ -23,3 +25,5 @@ for combo in itertools.product(*values):
     for k, v in zip(keys, combo):
         deep_set(cfg, k, v)
     run(cfg)
+    gc.collect()
+    torch.cuda.empty_cache()

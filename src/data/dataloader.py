@@ -301,7 +301,7 @@ def get_dataloaders(data_type: str, config:dict, transforms:bool=True) -> DataLo
         if str(seed) not in stats:
            stats = compute_statistics(copy.deepcopy(config), seeds=seed)
         piControl_diff = bool(config['data']['piControl_diff'])
-        add_clim_to_predictors = bool(config['data']['add_clim_to_predictors'])
+        add_clim_to_predictors = bool(config['data'].get('add_clim_to_predictors', False))
         if piControl_diff:
             climatology = get_climatology(config)
             climatology = torch.tensor(climatology, dtype=torch.float32).squeeze()

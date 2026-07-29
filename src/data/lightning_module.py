@@ -41,17 +41,23 @@ class scenarIALightningModule(pl.LightningModule):
         self.learning_rate = config['train']['learning_rate']
         self.runs_dir = RUNS_DIR / config['train']['runs_dir']
         self.outputs = config['train']['outputs']
-        self.inputs = config['train']['inputs']
+        inputs = config['train']['inputs']
+        self.inputs = inputs[:-1] if 'climatology' in inputs else inputs # for a specific run ...
+        self.add_clim_to_predictors = config['data'].get('add_clim_to_predictors', False)
+        if self.add_clim_to_predictors:
+            self.inputs_len = len(self.inputs) + 1
+        else:
+            self.inputs_len = len(self.inputs)
         self.img_size = config['train']['img_size']
         try:
-            self.simus_val = config['train']['simus_val'] # ['ssp370'] or None
+            self.simus_val = config['train']['simus_val'] # ['ssp370'] or None for old runs
         except KeyError:
             self.simus_val = None
         self.simus_test = config['train']['simus_test']
         self.scheduler_step_size = config['train']['scheduler_step_size']
         self.scheduler_gamma = config['train']['scheduler_gamma']
         try:
-            self.lstm_units = config['train']['lstm_units']
+            self.lstm_units = config['train']['lstm_units'] # for old runs
         except KeyError:
             self.lstm_units = 25
         self.arch = config['train'].get('arch', 'cnn-lstm')
@@ -70,7 +76,7 @@ class scenarIALightningModule(pl.LightningModule):
                 })
         self.spatial_corr_metric = PearsonCorrCoef()
 
-        # hp_metric for hyperparameter optimization, here we choose the validation RMSE
+        # hp_metric for hyperparameter optimization
         self.val_rmse = LatWeightedRMSEMetric()
         self.best_val_score = float('inf') 
         self.best_val_outputs_per_simu = {}
@@ -101,7 +107,7 @@ class scenarIALightningModule(pl.LightningModule):
             output_seq_len = self.seq_length
         match self.arch:
             case 'cnn-lstm':
-                self.model = CNNLSTMModel(self.seq_length, height=self.img_size[0], width=self.img_size[1], channels=len(self.inputs),
+                self.model = CNNLSTMModel(self.seq_length, height=self.img_size[0], width=self.img_size[1], channels=self.inputs_len,
                                           output_seq_len=output_seq_len, lstm_units=self.lstm_units).float()
             case 'unet':
                 # variables and timesteps are concatenated in the channel dimension
@@ -110,22 +116,22 @@ class scenarIALightningModule(pl.LightningModule):
                 self.model = smp.Unet(
                         encoder_name='vgg11',
                         encoder_weights=None,
-                        in_channels=len(self.inputs)*self.seq_length,
+                        in_channels=self.inputs_len*self.seq_length,
                         classes=len(self.outputs)*output_seq_len,
                         encoder_depth = 5,
                         activation='identity',
                     )
             case 'miniunet':
-                self.model = MiniUNet(in_channels=len(self.inputs)*self.seq_length, 
+                self.model = MiniUNet(in_channels=self.inputs_len*self.seq_length, 
                                       out_channels=len(self.outputs)*output_seq_len, init_features=32).float()
                 
             case 'time-unet':
                 self.model = time_UNet(
-                    in_var_ids=self.inputs,
+                    in_var_ids=self.inputs.append('climatology') if self.add_clim_to_predictors else self.inputs,
                     out_var_ids=self.outputs,
                     longitude=self.img_size[1],
                     latitude=self.img_size[0],
-                    activation_function=nn.ReLU,
+                    activation_function=None,
                     datamodule_config=None,
                     channels_last=True,
                     seq_to_seq=not self.predict_only_last_timestep,
@@ -133,11 +139,10 @@ class scenarIALightningModule(pl.LightningModule):
                 ).float()
 
     def forward(self, x):
-        if self.arch == 'unet' or self.arch == 'miniunet':
-            x = x.permute(0, 2, 3, 4, 1)      # (b, lat, lon, variable, time)
-            x = x.contiguous()                 # nécessaire car permute ne fait que réordonner les strides
-            x = x.view(x.size(0), x.size(1), x.size(2), x.size(3)*x.size(4)) # (B, lat, lon, C, T) --> (B, lat, lon, T*C)
-            x = x.permute((0, 3, 1, 2)) # conv2d needs (B, C, lat, lon)
+        if self.arch == 'unet':
+            x = x.permute(0, 4, 1, 2, 3) # (B, C, T, lat, lon)
+            x = x.contiguous()
+            x = x.view(x.size(0), x.size(1) * x.size(2), x.size(3), x.size(4)) # (B, C, T, lat, lon) --> (B, C*T, lat, lon)
         y_hat = self.model(x)
         #if self.arch == 'unet' or self.arch == 'miniunet':
         #    y_hat = y_hat.unsqueeze(1) # (B, lat, lon, C) --> (B, 1, lat, lon, C)

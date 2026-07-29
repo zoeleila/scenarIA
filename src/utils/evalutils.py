@@ -1,4 +1,4 @@
-from math import sqrt
+import os
 from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
@@ -7,6 +7,7 @@ import matplotlib.colors as mcolors
 import cartopy.feature as cfeature
 import torch
 import pandas as pd
+import yaml
 
 from scenarIA.src.utils.datautils import weighted_global_mean, apply_moving_average, get_statistics_from_bootstrap
 from scenarIA.src.utils.metrics import NRMSE_ClimateBench, NRMSE_g_ClimateBench, NRMSE_s_ClimateBench
@@ -180,6 +181,7 @@ class EvaluationPlots():
 
         if y_true.ndim == 3:
             y_true = y_true.mean(axis=0)
+            print(y_pred_mean.shape)
             y_pred_mean = y_pred_mean.mean(axis=0)
             y_pred_std = y_pred_std.mean(axis=0)
         
@@ -317,6 +319,130 @@ class EvaluationPlots():
         else:
             plt.show()
 
+def _time_corr_map(y_true, y_pred):
+    return np.array([[np.corrcoef(y_true[:, i, j], y_pred[:, i, j])[0, 1]
+                       for j in range(y_true.shape[2])]
+                      for i in range(y_true.shape[1])])
+
+def compare_metrics_maps(y, y_hat_dict, var_name, title=None, save_dir=None,
+                          config_plots=None, projection=ccrs.Robinson(),
+                          transform=ccrs.PlateCarree(), domain=[0., 360., -90., 90.],
+                          unit='', no_limits=False, figsize=None):
+    """
+    y (time, lat, lon)
+    y_hat_dict : {'test_name': (runs, time, lat, lon), ...}
+
+    Grille : 4 lignes x (1 + n_tests) colonnes
+        col 0, ligne 0 : moyenne temporelle de y
+        col j+1 :
+            ligne 0 : moyenne temporelle + inter-runs de la simulation
+            ligne 1 : écart-type inter-runs (des moyennes temporelles)
+            ligne 2 : erreur moyenne (moyenne temp. de chaque run - moyenne temp. de y), moyennée sur les runs
+            ligne 3 : moyenne des cartes de corrélation temporelle (run vs y) sur les runs
+    """
+    default_config = {
+        'cmap': {'values': 'viridis', 'std': 'viridis',
+                 'mean_error': 'coolwarm', 'correlation': 'coolwarm'},
+        'lim': {'values': [None, None], 'std': [None, None],
+                'mean_error': [None, None], 'correlation': [-1, 1]}
+    }
+    if config_plots is None:
+        config_plots = default_config
+    else:
+        config_plots = config_plots[var_name]
+        unit = config_plots['unit']
+
+    n_tests = len(y_hat_dict)
+    n_rows, n_cols = 4, n_tests + 1
+    y_col = n_cols - 1  # dernière colonne
+
+    if figsize is None:
+        figsize = (3.6 * n_cols, 2.5 * n_rows)
+
+    fig, axes = plt.subplots(
+        n_rows, n_cols, figsize=figsize,
+        subplot_kw={'projection': projection},
+        gridspec_kw={'wspace': 0.08, 'hspace': 0.1}
+    )
+    if n_cols == 1:
+        axes = axes.reshape(n_rows, 1)
+
+    y_time_mean = y.mean(axis=0)
+
+    def _plot(ax, data, key, subtitle):
+        cmap = config_plots['cmap'][key]
+        lim = [None, None] if no_limits else config_plots['lim'][key]
+        if lim[0] is not None:
+            n_levels = 10 if cmap == 'coolwarm' else 11
+            levels = np.linspace(lim[0], lim[1], n_levels)
+        else:
+            levels = None
+        cs = ax.contourf(data, cmap=cmap, levels=levels, extent=domain,
+                          transform=transform, extend='both')
+        if subtitle:
+            ax.set_title(subtitle, fontsize=14)
+        ax.add_feature(cfeature.COASTLINE, linewidth=0.8, alpha=0.7)
+        cbar = fig.colorbar(cs, ax=ax, shrink=0.75, orientation='horizontal',
+                             location='bottom', pad=0.03, aspect=25,
+                             label=f'{var_name} ({unit})' if unit else var_name)
+        cbar.ax.tick_params(labelsize=10)
+        cbar.set_label(cbar.ax.get_xlabel(), fontsize=10)
+        if lim[0] is not None:
+            ticks = np.linspace(lim[0], lim[1], 5)
+            cbar.set_ticks(ticks)
+            cbar.set_ticklabels([str(round(float(t), 2)) for t in ticks])
+
+    row_labels = ['Predictions mean',
+                  'Predictions std',
+                  'Mean errors',
+                  'Mean correlation']
+
+    # -- une colonne par test (0 .. n_tests-1) --
+    for j, (test_name, y_hat) in enumerate(y_hat_dict.items()):
+        if isinstance(y_hat, list):
+            y_hat = np.stack(y_hat, axis=0)
+
+        runs_time_mean = y_hat.mean(axis=1)                          # (runs, lat, lon)
+        sim_mean = runs_time_mean.mean(axis=0)                       # ligne 0
+        sim_std = runs_time_mean.std(axis=0)                         # ligne 1
+        mean_error = (runs_time_mean - y_time_mean[None, ...]).mean(axis=0)  # ligne 2
+
+        n_runs = y_hat.shape[0]
+        corr_maps = np.stack([_time_corr_map(y, y_hat[r]) for r in range(n_runs)])
+        mean_corr = np.nanmean(corr_maps, axis=0)                    # ligne 3
+
+        _plot(axes[0, j], sim_mean, 'values', test_name)
+        _plot(axes[1, j], sim_std, 'std', None)
+        _plot(axes[2, j], mean_error, 'mean_error', None)
+        _plot(axes[3, j], mean_corr, 'temporal_correlation', None)
+
+        # étiquette de ligne (à gauche de la première colonne de test)
+        if j == 0:
+            for r in range(n_rows):
+                axes[r, j].annotate(
+                    row_labels[r], xy=(0, 0.5), xycoords='axes fraction',
+                    xytext=(-15, 0), textcoords='offset points',
+                    ha='right', va='center', rotation=90, fontsize=14
+                )
+
+    # -- dernière colonne : uniquement y, ligne 0 --
+    _plot(axes[0, y_col], y_time_mean, 'values', 'True')
+    for r in range(1, n_rows):
+        axes[r, y_col].axis('off')
+
+    plt.tight_layout(pad=0.8)
+    if title:
+        fig.suptitle(title, fontsize=18)
+        plt.subplots_adjust(top=0.94)
+
+    if save_dir:
+        os.makedirs(save_dir, exist_ok=True)
+        fname = f"{title}_compare_metrics_{var_name}.png"
+        plt.savefig(os.path.join(save_dir, fname), bbox_inches='tight')
+        plt.close(fig)
+    else:
+        plt.show()
+
 
 def compare_temporal_profiles(y, y_hat_dict, t, var_name, lats, point=None, window_size:int=None, config_plots=None, title=None, save_dir=None):
 
@@ -367,84 +493,8 @@ def compare_temporal_profiles(y, y_hat_dict, t, var_name, lats, point=None, wind
     if save_dir:
         plt.savefig(save_dir / f'{title}_temporal_profiles_{var_name}_{tests_str}.png')
 
-def compare_metrics(y, y_hat_dict, var_name, lats=None, title=None, save_dir=None):
-    '''
-    Plot bar charts comparing metrics (NRMSE, sRMSE, gRMSE) for different tests. with confidence intervals if multiple runs are provided.
 
-    y: np.array of shape (time, lat, lon)
-    y_hat_dict: dict of {test_name: list of np.array of shape (time, lat, lon)}. The list can contain one or more arrays (e.g. for ensemble members or bootstrap samples).
-    var_name: name of the variable (e.g. 'tas')
-    lats: np.array of shape (lat,) containing the latitudes corresponding to the lat dimension of y and y_hat. If None, it is assumed to be equally spaced from -90 to 90.
-    title: title of the plot
-    save_dir: directory to save the plot
-    '''
-    lats = np.linspace(-90, 90, y.shape[-2]) if lats is None else lats
-    y = y[-21:,:,:]
-
-    metric_dict = {'nrmse':{},
-                   'srmse' : {},
-                   'grmse': {}}
-
-    for test, y_hat in y_hat_dict.items(): 
-        if isinstance(y_hat, list) and len(y_hat) > 1:
-            y_hat_stack = np.stack(y_hat, axis=0)[:,-21:,:,:]
-            res = get_statistics_from_bootstrap(y_hat_stack, n_bootstrap=1000).bootstrap_distribution # shape (time, lat, lon, n_bootstrap)
-            res = np.transpose(res, (3, 0, 1, 2))
-            metric_dict['nrmse'][test] = [NRMSE_ClimateBench(torch.tensor(res[i]),
-                                                    torch.tensor(y),
-                                                    torch.tensor(lats)) for i in range(res.shape[0])]
-            metric_dict['srmse'][test] = [NRMSE_s_ClimateBench(torch.tensor(res[i]), 
-                                                            torch.tensor(y), 
-                                                            torch.tensor(lats),
-                                                            normalize=False,
-                                                            weights_normalization='mean') for i in range(res.shape[0])]
-            metric_dict['grmse'][test] = [NRMSE_g_ClimateBench(torch.tensor(res[i]), 
-                                                            torch.tensor(y), 
-                                                            torch.tensor(lats),
-                                                            normalize = False,
-                                                            weights_normalization='mean') for i in range(res.shape[0])]
-        
-        else: 
-            y_hat = y_hat[0] if isinstance(y_hat, list) else y_hat
-            y_hat_mean = y_hat[-21:,:,:]
-            metric_dict['nrmse'][test] = NRMSE_ClimateBench(torch.tensor(y_hat_mean), 
-                                                            torch.tensor(y), 
-                                                            torch.tensor(lats))
-            metric_dict['srmse'][test] = NRMSE_s_ClimateBench(torch.tensor(y_hat_mean), 
-                                                            torch.tensor(y), 
-                                                            torch.tensor(lats),
-                                                            normalize=False,
-                                                            weights_normalization='mean')
-            metric_dict['grmse'][test] = NRMSE_g_ClimateBench(torch.tensor(y_hat_mean), 
-                                                            torch.tensor(y), 
-                                                            torch.tensor(lats),
-                                                            normalize = False,
-                                                            weights_normalization='mean')
-        ## add ACC
-
-    for metric in metric_dict:
-        test_names = list(metric_dict[metric].keys())
-        if isinstance(metric_dict[metric][test_names[0]], list):
-            metrics_values_mean = [torch.tensor(metric_dict[metric][test]).mean().item() for test in test_names]
-            metrics_values_lower = [torch.tensor(metric_dict[metric][test]).quantile(0.025).item() for test in test_names]
-            metrics_values_upper = [torch.tensor(metric_dict[metric][test]).quantile(0.975).item() for test in test_names]        
-            print(f'{test_names} = {metrics_values_mean} with 95% CI [{metrics_values_lower}, {metrics_values_upper}]')
-        else:
-            metrics_values_mean = [metric_dict[metric][test].item() for test in test_names]
-        print(f'{test_names} = {metrics_values_mean}')
-        plt.figure(figsize=(8,4))
-        if isinstance(metric_dict[metric][test_names[0]], list):
-            plt.bar(test_names, metrics_values_mean, yerr=[np.array(metrics_values_mean) - np.array(metrics_values_lower), 
-                                                        np.array(metrics_values_upper) - np.array(metrics_values_mean)],
-                    capsize=5)
-        else:
-            plt.bar(test_names, metrics_values_mean)
-        plt.grid(axis='y', alpha=0.5)
-        plt.title(title)
-        plt.ylabel(f'{var_name} {metric}') # TODO add unit if unit
-        plt.savefig(save_dir / f'{title}_{metric}_bar_plot_{var_name}.png')
-
-def compare_metrics2(y, y_hat_dict, var_name, lats=None, title=None, save_dir=None,
+def compare_metrics(y, y_hat_dict, var_name, lats=None, title=None, save_dir=None,
                     ensemble_scoring='scores_of_bootstrap_mean'):
     '''
     Plot bar charts comparing metrics (NRMSE, sRMSE, gRMSE) for different tests.
@@ -461,7 +511,6 @@ def compare_metrics2(y, y_hat_dict, var_name, lats=None, title=None, save_dir=No
                              retourne moyenne + IC 95% inter-membres
     '''
     lats = np.linspace(-90, 90, y.shape[-2]) if lats is None else lats
-    y = y[-21:, :, :]
 
     metric_fns = {
         'nrmse': lambda yh: NRMSE_ClimateBench(torch.tensor(yh), torch.tensor(y), torch.tensor(lats)),
@@ -477,7 +526,7 @@ def compare_metrics2(y, y_hat_dict, var_name, lats=None, title=None, save_dir=No
         is_ensemble = isinstance(y_hat, list) and len(y_hat) > 1
 
         if is_ensemble:
-            y_hat_stack = np.stack(y_hat, axis=0)[:, -21:, :, :]  # (n_members, time, lat, lon)
+            y_hat_stack = np.stack(y_hat, axis=0)  # (n_members, time, lat, lon)
 
             if ensemble_scoring == 'scores_of_bootstrap_mean':
                 # Comportement actuel : bootstrap sur la moyenne des membres
@@ -493,7 +542,7 @@ def compare_metrics2(y, y_hat_dict, var_name, lats=None, title=None, save_dir=No
 
         else:
             # Cas single member : inchangé
-            y_hat_single = (y_hat[0] if isinstance(y_hat, list) else y_hat)[-21:, :, :]
+            y_hat_single = (y_hat[0] if isinstance(y_hat, list) else y_hat)
             for metric, fn in metric_fns.items():
                 metric_dict[metric][test] = fn(y_hat_single)
 
@@ -529,43 +578,8 @@ def compare_metrics2(y, y_hat_dict, var_name, lats=None, title=None, save_dir=No
         plt.savefig(save_dir / f'{title}_{metric}_bar_plot_{var_name}_{ensemble_scoring}.png' if is_list 
                     else save_dir / f'{title}_{metric}_bar_plot_{var_name}.png')
 
-def compare_metrics_single_runs(y, y_hat_dict, var_name, lats=None, title=None, save_dir=None):
-    lats = np.linspace(-90, 90, y.shape[-2]) if lats is None else lats
-    y = y[-21:,:,:]
 
-    metric_dict = {'nrmse':{},
-                   'srmse' : {},
-                   'grmse': {}}
-
-    for test, y_hat in y_hat_dict.items():  
-        print(y_hat[0].shape)
-        metric_dict['nrmse'][test] = [NRMSE_ClimateBench(torch.tensor(y_hat[i][-21:,:,:]), 
-                                                        torch.tensor(y), 
-                                                        torch.tensor(lats)) for i in range(len(y_hat))]
-        metric_dict['srmse'][test] = [NRMSE_s_ClimateBench(torch.tensor(y_hat[i][-21:,:,:]), 
-                                                        torch.tensor(y), 
-                                                        torch.tensor(lats),
-                                                        normalize=False,
-                                                        weights_normalization='mean') for i in range(len(y_hat))]
-        metric_dict['grmse'][test] = [NRMSE_g_ClimateBench(torch.tensor(y_hat[i][-21:,:,:]), 
-                                                        torch.tensor(y), 
-                                                        torch.tensor(lats),
-                                                        normalize = False,
-                                                        weights_normalization='mean') for i in range(len(y_hat))]
-    
-    for metric in metric_dict:
-        test_names = metric_dict[metric].keys()
-        metric_values = metric_dict[metric].values()
-        print(f'{test_names} = {metric_values}')
-        plt.figure(figsize=(8,4))
-        plt.boxplot(metric_values, labels=test_names)
-        plt.grid(axis='y', alpha=0.5)
-        plt.title(title)
-        plt.ylabel(f'{var_name} {metric}') # TODO add unit if unit
-        plt.savefig(save_dir / f'{title}_{metric}_box_plot_{var_name}.png')
-
-
-def compare_metric_maps2(y, y_hat_dict, t, var_name,
+def compare_metric_changes_maps(y, y_hat_dict, t, var_name,
                         periods=[['2020', '2050'], ['2070', '2100']],
                         config_plots=None,
                         title=None,
@@ -721,17 +735,13 @@ def compare_df_metrics(df, test_name, metric_name, title=None, save_dir=None):
     plt.savefig(save_dir / f'{title}_{metric_name}_barplot.png')
 
 if __name__ == "__main__":
-    test = 'pr_cnn-lstm_seed42_seq5_mem50_sub1'
-    run_dir = Path(f'/scratch/globc/garcia/scenarIA/runs/MPI-ESM1-2-LR/annual/exp2/{test}')
-    file = run_dir / 'compare_versions_val_metrics_best_checkpoint.csv'
-    df = pd.read_csv(file)
-    print('min val_rmse:', df['val_rmse'].min(), 'for version:', df.loc[df['val_rmse'].idxmin(), 'version'])
-    # remove max_epoch == 30
-    df = df[df['max_epochs'] != 30]
-    print(df)
-
-    for metric in ['val_rmse']:
-        compare_df_metrics(df, test_name='version', metric_name=metric, title=test,
-                           save_dir=run_dir)
+    with open(CONFIG_DIR / 'plots.yaml') as file:
+        config_plots = yaml.safe_load(file)
+    y = np.random.rand(20, 96, 192)
+    y_hat_dict = {'test1': np.random.rand(10, 20, 96, 192),
+             'test2': np.random.rand(10,20,96,192)}
+    
+    compare_metrics_maps(y, y_hat_dict, var_name='pr', title='test', save_dir=GRAPHS_DIR/'tests',
+                          config_plots=config_plots)
         
  
