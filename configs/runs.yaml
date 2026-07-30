@@ -49,18 +49,6 @@ compare:
   predictions_to_compare: # to compare predictions (seeds mean)
 
 predict:
-    'rmse_clim':
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed42_seq5_mem30/lightning_logs/version_22
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed43_seq5_mem30/lightning_logs/version_5
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed44_seq5_mem30/lightning_logs/version_4
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed45_seq5_mem30/lightning_logs/version_4
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed46_seq5_mem30/lightning_logs/version_4
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed47_seq5_mem30/lightning_logs/version_4
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed48_seq5_mem30/lightning_logs/version_4
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed49_seq5_mem30/lightning_logs/version_4
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed50_seq5_mem30/lightning_logs/version_4
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed51_seq5_mem30/lightning_logs/version_4
-
     'rmse':
     - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed42_seq5_mem30/lightning_logs/version_23
     - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed43_seq5_mem30/lightning_logs/version_6
@@ -73,14 +61,4 @@ predict:
     - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed50_seq5_mem30/lightning_logs/version_5
     - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed51_seq5_mem30/lightning_logs/version_5
 
-    'rmse':
-    - MPI-ESM1-2-LR/annual/exp9/pr_time-unet_seed42_seq5_mem30/lightning_logs/version_5
-    - MPI-ESM1-2-LR/annual/exp9/pr_time-unet_seed43_seq5_mem30/lightning_logs/version_1
-    - MPI-ESM1-2-LR/annual/exp9/pr_time-unet_seed44_seq5_mem30/lightning_logs/version_1
-    - MPI-ESM1-2-LR/annual/exp9/pr_time-unet_seed45_seq5_mem30/lightning_logs/version_1
-    - MPI-ESM1-2-LR/annual/exp9/pr_time-unet_seed46_seq5_mem30/lightning_logs/version_1
-    - MPI-ESM1-2-LR/annual/exp9/pr_time-unet_seed47_seq5_mem30/lightning_logs/version_1
-    - MPI-ESM1-2-LR/annual/exp9/pr_time-unet_seed48_seq5_mem30/lightning_logs/version_1
-    - MPI-ESM1-2-LR/annual/exp9/pr_time-unet_seed49_seq5_mem30/lightning_logs/version_1
-    - MPI-ESM1-2-LR/annual/exp9/pr_time-unet_seed50_seq5_mem30/lightning_logs/version_1
-    - MPI-ESM1-2-LR/annual/exp9/pr_time-unet_seed51_seq5_mem30/lightning_logs/version_1
+   

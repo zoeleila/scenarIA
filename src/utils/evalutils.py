@@ -8,6 +8,7 @@ import cartopy.feature as cfeature
 import torch
 import pandas as pd
 import yaml
+from scipy import stats
 
 from scenarIA.src.utils.datautils import weighted_global_mean, apply_moving_average, get_statistics_from_bootstrap
 from scenarIA.src.utils.metrics import NRMSE_ClimateBench, NRMSE_g_ClimateBench, NRMSE_s_ClimateBench
@@ -320,9 +321,22 @@ class EvaluationPlots():
             plt.show()
 
 def _time_corr_map(y_true, y_pred):
-    return np.array([[np.corrcoef(y_true[:, i, j], y_pred[:, i, j])[0, 1]
-                       for j in range(y_true.shape[2])]
-                      for i in range(y_true.shape[1])])
+    """
+    Corrélation de Pearson temporelle, vectorisée sur (lat, lon).
+    y_true, y_pred : (time, lat, lon)
+    """
+    a = y_true - y_true.mean(axis=0, keepdims=True)
+    b = y_pred - y_pred.mean(axis=0, keepdims=True)
+
+    cov = (a * b).sum(axis=0)
+    std_a = np.sqrt((a ** 2).sum(axis=0))
+    std_b = np.sqrt((b ** 2).sum(axis=0))
+
+    with np.errstate(divide='ignore', invalid='ignore'):
+        corr = cov / (std_a * std_b)
+
+    corr[(std_a == 0) | (std_b == 0)] = np.nan
+    return corr
 
 def compare_metrics_maps(y, y_hat_dict, var_name, title=None, save_dir=None,
                           config_plots=None, projection=ccrs.Robinson(),
@@ -332,9 +346,9 @@ def compare_metrics_maps(y, y_hat_dict, var_name, title=None, save_dir=None,
     y (time, lat, lon)
     y_hat_dict : {'test_name': (runs, time, lat, lon), ...}
 
-    Grille : 4 lignes x (1 + n_tests) colonnes
-        col 0, ligne 0 : moyenne temporelle de y
-        col j+1 :
+    Grille : 4 lignes x (1 colonne colorbar + n_tests colonnes + 1 colonne y)
+        dernière colonne, ligne 0 : moyenne temporelle de y
+        colonnes 0..n_tests-1 (une par test) :
             ligne 0 : moyenne temporelle + inter-runs de la simulation
             ligne 1 : écart-type inter-runs (des moyennes temporelles)
             ligne 2 : erreur moyenne (moyenne temp. de chaque run - moyenne temp. de y), moyennée sur les runs
@@ -342,9 +356,9 @@ def compare_metrics_maps(y, y_hat_dict, var_name, title=None, save_dir=None,
     """
     default_config = {
         'cmap': {'values': 'viridis', 'std': 'viridis',
-                 'mean_error': 'coolwarm', 'correlation': 'coolwarm'},
+                 'mean_error': 'coolwarm', 'temporal_correlation': 'coolwarm'},
         'lim': {'values': [None, None], 'std': [None, None],
-                'mean_error': [None, None], 'correlation': [-1, 1]}
+                'mean_error': [None, None], 'temporal_correlation': [-1, 1]}
     }
     if config_plots is None:
         config_plots = default_config
@@ -353,19 +367,33 @@ def compare_metrics_maps(y, y_hat_dict, var_name, title=None, save_dir=None,
         unit = config_plots['unit']
 
     n_tests = len(y_hat_dict)
-    n_rows, n_cols = 4, n_tests + 1
-    y_col = n_cols - 1  # dernière colonne
+    n_map_cols = n_tests + 1          # colonnes de cartes (tests + y)
+    n_cols = n_map_cols + 1           # + 1 colonne colorbar à gauche
+    n_rows = 4
+    y_col = n_cols - 1                # dernière colonne = y
+
+    row_keys = ['values', 'std', 'mean_error', 'temporal_correlation']
+    row_labels = {
+        'values': f'{var_name} mean ({unit})' if unit else f'{var_name} mean',
+        'std': f'{var_name} std ({unit})' if unit else f'{var_name} std',
+        'mean_error': f'{var_name} error ({unit})' if unit else f'{var_name} error',
+        'temporal_correlation': 'Pearson r',
+    }
 
     if figsize is None:
-        figsize = (3.6 * n_cols, 2.5 * n_rows)
+        figsize = (3.6 * n_map_cols + 0.6, 2.5 * n_rows)
 
-    fig, axes = plt.subplots(
-        n_rows, n_cols, figsize=figsize,
-        subplot_kw={'projection': projection},
-        gridspec_kw={'wspace': 0.08, 'hspace': 0.1}
-    )
-    if n_cols == 1:
-        axes = axes.reshape(n_rows, 1)
+    fig = plt.figure(figsize=figsize)
+    gs = fig.add_gridspec(n_rows, n_cols,
+                           width_ratios=[0.05] + [1] * n_map_cols,
+                           wspace=0.08, hspace=0.1)
+
+    axes = np.empty((n_rows, n_map_cols), dtype=object)
+    cbar_axes = []
+    for r in range(n_rows):
+        cbar_axes.append(fig.add_subplot(gs[r, 0]))
+        for c in range(n_map_cols):
+            axes[r, c] = fig.add_subplot(gs[r, c + 1], projection=projection)
 
     y_time_mean = y.mean(axis=0)
 
@@ -382,20 +410,7 @@ def compare_metrics_maps(y, y_hat_dict, var_name, title=None, save_dir=None,
         if subtitle:
             ax.set_title(subtitle, fontsize=14)
         ax.add_feature(cfeature.COASTLINE, linewidth=0.8, alpha=0.7)
-        cbar = fig.colorbar(cs, ax=ax, shrink=0.75, orientation='horizontal',
-                             location='bottom', pad=0.03, aspect=25,
-                             label=f'{var_name} ({unit})' if unit else var_name)
-        cbar.ax.tick_params(labelsize=10)
-        cbar.set_label(cbar.ax.get_xlabel(), fontsize=10)
-        if lim[0] is not None:
-            ticks = np.linspace(lim[0], lim[1], 5)
-            cbar.set_ticks(ticks)
-            cbar.set_ticklabels([str(round(float(t), 2)) for t in ticks])
-
-    row_labels = ['Predictions mean',
-                  'Predictions std',
-                  'Mean errors',
-                  'Mean correlation']
+        return cs, lim
 
     # -- une colonne par test (0 .. n_tests-1) --
     for j, (test_name, y_hat) in enumerate(y_hat_dict.items()):
@@ -411,24 +426,31 @@ def compare_metrics_maps(y, y_hat_dict, var_name, title=None, save_dir=None,
         corr_maps = np.stack([_time_corr_map(y, y_hat[r]) for r in range(n_runs)])
         mean_corr = np.nanmean(corr_maps, axis=0)                    # ligne 3
 
-        _plot(axes[0, j], sim_mean, 'values', test_name)
-        _plot(axes[1, j], sim_std, 'std', None)
-        _plot(axes[2, j], mean_error, 'mean_error', None)
-        _plot(axes[3, j], mean_corr, 'temporal_correlation', None)
+        cs0, lim0 = _plot(axes[0, j], sim_mean, 'values', test_name)
+        cs1, lim1 = _plot(axes[1, j], sim_std, 'std', None)
+        cs2, lim2 = _plot(axes[2, j], mean_error, 'mean_error', None)
+        cs3, lim3 = _plot(axes[3, j], mean_corr, 'temporal_correlation', None)
 
-        # étiquette de ligne (à gauche de la première colonne de test)
         if j == 0:
-            for r in range(n_rows):
-                axes[r, j].annotate(
-                    row_labels[r], xy=(0, 0.5), xycoords='axes fraction',
-                    xytext=(-15, 0), textcoords='offset points',
-                    ha='right', va='center', rotation=90, fontsize=14
-                )
+            row_css = [(cs0, lim0), (cs1, lim1), (cs2, lim2), (cs3, lim3)]
 
     # -- dernière colonne : uniquement y, ligne 0 --
-    _plot(axes[0, y_col], y_time_mean, 'values', 'True')
+    cs_y, lim_y = _plot(axes[0, y_col - 1], y_time_mean, 'values', 'True')
     for r in range(1, n_rows):
-        axes[r, y_col].axis('off')
+        axes[r, y_col - 1].axis('off')
+
+    # -- colorbars verticales, une par ligne --
+    for r in range(n_rows):
+        cs, lim = row_css[r]
+        cbar = fig.colorbar(cs, cax=cbar_axes[r], orientation='vertical')
+        cbar.ax.tick_params(labelsize=10)
+        cbar.set_label(row_labels[row_keys[r]], fontsize=13)
+        cbar.ax.yaxis.set_label_position('left')
+        cbar.ax.yaxis.set_ticks_position('right')
+        if lim[0] is not None:
+            ticks = np.linspace(lim[0], lim[1], 5)
+            cbar.set_ticks(ticks)
+            cbar.set_ticklabels([str(round(float(t), 2)) for t in ticks])
 
     plt.tight_layout(pad=0.8)
     if title:
