@@ -341,18 +341,13 @@ def _time_corr_map(y_true, y_pred):
 def compare_metrics_maps(y, y_hat_dict, var_name, title=None, save_dir=None,
                           config_plots=None, projection=ccrs.Robinson(),
                           transform=ccrs.PlateCarree(), domain=[0., 360., -90., 90.],
-                          unit='', no_limits=False, figsize=None):
+                          unit='', no_limits=False, figsize=None,
+                          orientation='horizontal'):
     """
     y (time, lat, lon)
     y_hat_dict : {'test_name': (runs, time, lat, lon), ...}
-
-    Grille : 4 lignes x (1 colonne colorbar + n_tests colonnes + 1 colonne y)
-        dernière colonne, ligne 0 : moyenne temporelle de y
-        colonnes 0..n_tests-1 (une par test) :
-            ligne 0 : moyenne temporelle + inter-runs de la simulation
-            ligne 1 : écart-type inter-runs (des moyennes temporelles)
-            ligne 2 : erreur moyenne (moyenne temp. de chaque run - moyenne temp. de y), moyennée sur les runs
-            ligne 3 : moyenne des cartes de corrélation temporelle (run vs y) sur les runs
+    orientation : 'horizontal' (métriques en lignes, tests en colonnes, y en dernière colonne)
+                  ou 'vertical' (métriques en colonnes, tests en lignes, y en première ligne)
     """
     default_config = {
         'cmap': {'values': 'viridis', 'std': 'viridis',
@@ -366,38 +361,44 @@ def compare_metrics_maps(y, y_hat_dict, var_name, title=None, save_dir=None,
         config_plots = config_plots[var_name]
         unit = config_plots['unit']
 
-    n_tests = len(y_hat_dict)
-    n_map_cols = n_tests + 1          # colonnes de cartes (tests + y)
-    n_cols = n_map_cols + 1           # + 1 colonne colorbar à gauche
-    n_rows = 4
-    y_col = n_cols - 1                # dernière colonne = y
-
     row_keys = ['values', 'std', 'mean_error', 'temporal_correlation']
-    row_labels = {
-        'values': f'{var_name} mean ({unit})' if unit else f'{var_name} mean',
-        'std': f'{var_name} std ({unit})' if unit else f'{var_name} std',
-        'mean_error': f'{var_name} error ({unit})' if unit else f'{var_name} error',
-        'temporal_correlation': 'Pearson r',
+    metric_labels = {
+        'values': f'Mean predictions \n ({unit})' if unit else 'Mean predictions',
+        'std': f'Predictions std \n ({unit})' if unit else 'Predictions std',
+        'mean_error': f'Mean predictions errors \n ({unit})' if unit else 'Mean predictions errors',
+        'temporal_correlation': 'Mean correlation \n ',
     }
-
-    if figsize is None:
-        figsize = (3.6 * n_map_cols + 0.6, 2.5 * n_rows)
-
-    fig = plt.figure(figsize=figsize)
-    gs = fig.add_gridspec(n_rows, n_cols,
-                           width_ratios=[0.05] + [1] * n_map_cols,
-                           wspace=0.08, hspace=0.1)
-
-    axes = np.empty((n_rows, n_map_cols), dtype=object)
-    cbar_axes = []
-    for r in range(n_rows):
-        cbar_axes.append(fig.add_subplot(gs[r, 0]))
-        for c in range(n_map_cols):
-            axes[r, c] = fig.add_subplot(gs[r, c + 1], projection=projection)
 
     y_time_mean = y.mean(axis=0)
 
-    def _plot(ax, data, key, subtitle):
+    # -- pré-calcul des cartes pour chaque test --
+    test_data = {}
+    for test_name, y_hat in y_hat_dict.items():
+        if isinstance(y_hat, list):
+            y_hat = np.stack(y_hat, axis=0)
+        runs_time_mean = y_hat.mean(axis=1)
+        sim_mean = runs_time_mean.mean(axis=0)
+        sim_std = runs_time_mean.std(axis=0)
+        mean_error = (runs_time_mean - y_time_mean[None, ...]).mean(axis=0)
+        n_runs = y_hat.shape[0]
+        corr_maps = np.stack([_time_corr_map(y, y_hat[r]) for r in range(n_runs)])
+        mean_corr = np.nanmean(corr_maps, axis=0)
+        test_data[test_name] = {'values': sim_mean, 'std': sim_std,
+                                 'mean_error': mean_error,
+                                 'temporal_correlation': mean_corr}
+    test_data['True'] = {'values': y_time_mean, 'std': None,
+                          'mean_error': None, 'temporal_correlation': None}
+
+    if orientation == 'horizontal':
+        entries = list(y_hat_dict.keys()) + ['True']
+    else:
+        entries = ['True'] + list(y_hat_dict.keys())
+
+    n_tests = len(y_hat_dict)
+    n_entries = len(entries)
+    n_metrics = len(row_keys)
+
+    def _plot(ax, data, key):
         cmap = config_plots['cmap'][key]
         lim = [None, None] if no_limits else config_plots['lim'][key]
         if lim[0] is not None:
@@ -407,64 +408,118 @@ def compare_metrics_maps(y, y_hat_dict, var_name, title=None, save_dir=None,
             levels = None
         cs = ax.contourf(data, cmap=cmap, levels=levels, extent=domain,
                           transform=transform, extend='both')
-        if subtitle:
-            ax.set_title(subtitle, fontsize=14)
         ax.add_feature(cfeature.COASTLINE, linewidth=0.8, alpha=0.7)
         return cs, lim
 
-    # -- une colonne par test (0 .. n_tests-1) --
-    for j, (test_name, y_hat) in enumerate(y_hat_dict.items()):
-        if isinstance(y_hat, list):
-            y_hat = np.stack(y_hat, axis=0)
+    ref_cs = {}   # cs/lim de référence par métrique (pour la colorbar)
 
-        runs_time_mean = y_hat.mean(axis=1)                          # (runs, lat, lon)
-        sim_mean = runs_time_mean.mean(axis=0)                       # ligne 0
-        sim_std = runs_time_mean.std(axis=0)                         # ligne 1
-        mean_error = (runs_time_mean - y_time_mean[None, ...]).mean(axis=0)  # ligne 2
+    if orientation == 'horizontal':
+        # métriques = lignes, tests+y = colonnes
+        n_rows, n_cols = n_metrics, n_entries
+        if figsize is None:
+            figsize = (3.6 * n_entries + 0.6, 2.5 * n_rows)
 
-        n_runs = y_hat.shape[0]
-        corr_maps = np.stack([_time_corr_map(y, y_hat[r]) for r in range(n_runs)])
-        mean_corr = np.nanmean(corr_maps, axis=0)                    # ligne 3
+        fig = plt.figure(figsize=figsize)
+        gs = fig.add_gridspec(n_rows, n_cols + 1,
+                               width_ratios=[0.05] + [1] * n_cols,
+                               wspace=0.08, hspace=0.1)
 
-        cs0, lim0 = _plot(axes[0, j], sim_mean, 'values', test_name)
-        cs1, lim1 = _plot(axes[1, j], sim_std, 'std', None)
-        cs2, lim2 = _plot(axes[2, j], mean_error, 'mean_error', None)
-        cs3, lim3 = _plot(axes[3, j], mean_corr, 'temporal_correlation', None)
+        cbar_axes = [fig.add_subplot(gs[r, 0]) for r in range(n_rows)]
+        axes = np.empty((n_rows, n_cols), dtype=object)
+        for r in range(n_rows):
+            for c in range(n_cols):
+                axes[r, c] = fig.add_subplot(gs[r, c + 1], projection=projection)
 
-        if j == 0:
-            row_css = [(cs0, lim0), (cs1, lim1), (cs2, lim2), (cs3, lim3)]
+        for c, entry_name in enumerate(entries):
+            for r, key in enumerate(row_keys):
+                data = test_data[entry_name][key]
+                if data is None:
+                    axes[r, c].axis('off')
+                    continue
+                cs, lim = _plot(axes[r, c], data, key)
+                if entry_name != 'True' and key not in ref_cs:
+                    ref_cs[key] = (cs, lim)
+                if r == 0:
+                    axes[r, c].set_title(entry_name, fontsize=14)
 
-    # -- dernière colonne : uniquement y, ligne 0 --
-    cs_y, lim_y = _plot(axes[0, y_col - 1], y_time_mean, 'values', 'True')
-    for r in range(1, n_rows):
-        axes[r, y_col - 1].axis('off')
+        for r, key in enumerate(row_keys):
+            cs, lim = ref_cs[key]
+            pos = cbar_axes[r].get_position()
+            new_width = pos.width * 0.5
+            x0 = pos.x0 + (pos.width - new_width) / 2
+            cbar_axes[r].set_position([x0, pos.y0, new_width, pos.height])
+            cbar = fig.colorbar(cs, cax=cbar_axes[r], orientation='vertical')
+            cbar.ax.tick_params(labelsize=9)
+            cbar.set_label(metric_labels[key], fontsize=11)
+            cbar.ax.yaxis.set_label_position('left')
+            cbar.ax.yaxis.set_ticks_position('left')
+            if lim[0] is not None:
+                ticks = np.linspace(lim[0], lim[1], 5)
+                cbar.set_ticks(ticks)
+                cbar.set_ticklabels([str(round(float(t), 2)) for t in ticks])
 
-    # -- colorbars verticales, une par ligne --
-    for r in range(n_rows):
-        cs, lim = row_css[r]
-        cbar = fig.colorbar(cs, cax=cbar_axes[r], orientation='vertical')
-        cbar.ax.tick_params(labelsize=10)
-        cbar.set_label(row_labels[row_keys[r]], fontsize=13)
-        cbar.ax.yaxis.set_label_position('left')
-        cbar.ax.yaxis.set_ticks_position('right')
-        if lim[0] is not None:
-            ticks = np.linspace(lim[0], lim[1], 5)
-            cbar.set_ticks(ticks)
-            cbar.set_ticklabels([str(round(float(t), 2)) for t in ticks])
+        fig.subplots_adjust(top=0.92, bottom=0.05, left=0.06, right=0.98,
+                             wspace=0.08, hspace=0.1)
 
-    plt.tight_layout(pad=0.8)
+    else:  # orientation == 'vertical'
+        # tests+y = lignes, métriques = colonnes
+        n_rows, n_cols = n_entries, n_metrics
+        if figsize is None:
+            figsize = (3.6 * n_cols, 2 * n_entries + 0.6)
+
+        fig = plt.figure(figsize=figsize)
+        gs = fig.add_gridspec(n_rows + 1, n_cols,
+                               height_ratios=[1] * n_rows + [0.05],
+                               wspace=0.08, hspace=0.03)
+
+        cbar_axes = [fig.add_subplot(gs[n_rows, c]) for c in range(n_cols)]
+        axes = np.empty((n_rows, n_cols), dtype=object)
+        for r in range(n_rows):
+            for c in range(n_cols):
+                axes[r, c] = fig.add_subplot(gs[r, c], projection=projection)
+
+        for r, entry_name in enumerate(entries):
+            for c, key in enumerate(row_keys):
+                data = test_data[entry_name][key]
+                if data is None:
+                    axes[r, c].axis('off')
+                    continue
+                cs, lim = _plot(axes[r, c], data, key)
+                if entry_name != 'True' and key not in ref_cs:
+                    ref_cs[key] = (cs, lim)
+                if c == 0:
+                    axes[r, c].annotate(
+                        entry_name, xy=(0, 0.5), xycoords='axes fraction',
+                        xytext=(-15, 0), textcoords='offset points',
+                        ha='right', va='center', rotation=90, fontsize=12
+                    )
+
+        for c, key in enumerate(row_keys):
+            cs, lim = ref_cs[key]
+            pos = cbar_axes[c].get_position()
+            new_height = pos.height * 0.4
+            y0 = pos.y0 + (pos.height - new_height) / 2
+            cbar_axes[c].set_position([pos.x0, y0, pos.width, new_height])
+            cbar = fig.colorbar(cs, cax=cbar_axes[c], orientation='horizontal')
+            cbar.ax.tick_params(labelsize=9)
+            cbar.set_label(metric_labels[key], fontsize=11)
+            if lim[0] is not None:
+                ticks = np.linspace(lim[0], lim[1], 5)
+                cbar.set_ticks(ticks)
+                cbar.set_ticklabels([str(round(float(t), 2)) for t in ticks])
+
+        fig.subplots_adjust(top=0.94, bottom=0.06, left=0.08, right=0.98,
+                             wspace=0.08, hspace=0.02)
+
     if title:
         fig.suptitle(title, fontsize=18)
-        plt.subplots_adjust(top=0.94)
 
     if save_dir:
         os.makedirs(save_dir, exist_ok=True)
         fname = f"{title}_compare_metrics_{var_name}.png"
         plt.savefig(os.path.join(save_dir, fname), bbox_inches='tight')
-        plt.close(fig)
     else:
         plt.show()
-
 
 def compare_temporal_profiles(y, y_hat_dict, t, var_name, lats, point=None, window_size:int=None, config_plots=None, title=None, save_dir=None):
 

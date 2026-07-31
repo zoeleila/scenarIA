@@ -18,10 +18,10 @@ data:
 train: # for training
   val_size: 0.2 # in case simus_val is None
   seed: 42
-  arch: 'time-unet'
-  learning_rate: 0.0001
+  arch: 'cnn-lstm'
+  learning_rate: 0.001
   max_epochs: 100
-  batch_size: 8
+  batch_size: 16
   runs_dir: 'MPI-ESM1-2-LR/annual/exp9/'
   inputs: ['CO2', 'SO2', 'CH4', 'BC', 'tau']
   outputs: ['pr']
