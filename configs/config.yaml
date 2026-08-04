@@ -18,10 +18,10 @@ data:
 train: # for training
   val_size: 0.2 # in case simus_val is None
   seed: 42
-  arch: 'cnn-lstm'
-  learning_rate: 0.001
+  arch: 'unet'
+  learning_rate: 0.0001
   max_epochs: 100
-  batch_size: 16
+  batch_size: 8
   runs_dir: 'MPI-ESM1-2-LR/annual/exp9/'
   inputs: ['CO2', 'SO2', 'CH4', 'BC', 'tau']
   outputs: ['pr']
@@ -35,3 +35,4 @@ train: # for training
   lstm_units: 64
   monitor_metric: 'val_rmse' # for best checkpointing and hyperparameter optimization
   early_stopping: 20
+  encoder: 'vgg11'

@@ -22,7 +22,7 @@ from scenarIA.src.models.miniunet import MiniUNet
 from scenarIA.src.models.time_unet import time_UNet
 from scenarIA.src.models.CNNLSTM import CNNLSTMModel
 from scenarIA.src.utils.losses import LLweighted_MSELoss_Climax
-from scenarIA.src.utils.metrics import NRMSE_ClimateBench, LatWeightedRMSEMetric
+from scenarIA.src.utils.metrics import NRMSE_ClimateBench, LatWeightedRMSEMetric, NRMSE_g_ClimateBench, NRMSE_s_ClimateBench
 from scenarIA.src.utils.datautils import weighted_global_mean
 from scenarIA.src.utils.settings import RUNS_DIR, CONFIG_DIR
 from scenarIA.src.utils.evalutils import EvaluationPlots
@@ -49,18 +49,15 @@ class scenarIALightningModule(pl.LightningModule):
         else:
             self.inputs_len = len(self.inputs)
         self.img_size = config['train']['img_size']
-        try:
-            self.simus_val = config['train']['simus_val'] # ['ssp370'] or None for old runs
-        except KeyError:
-            self.simus_val = None
+        self.simus_val = config['train'].get('simus_val', None) # ['ssp370'] or None for old runs
         self.simus_test = config['train']['simus_test']
         self.scheduler_step_size = config['train']['scheduler_step_size']
         self.scheduler_gamma = config['train']['scheduler_gamma']
-        try:
-            self.lstm_units = config['train']['lstm_units'] # for old runs
-        except KeyError:
-            self.lstm_units = 25
+        
+        self.lstm_units = config['train'].get('lstm_units', 25) # for old runs
         self.arch = config['train'].get('arch', 'cnn-lstm')
+        self.encoder = config['train'].get('encoder', 'resnet18')
+
         self.predict_only_last_timestep = config['data']['predict_only_last_timestep']
         os.makedirs(self.runs_dir, exist_ok=True)
 
@@ -112,15 +109,18 @@ class scenarIALightningModule(pl.LightningModule):
             case 'unet':
                 # variables and timesteps are concatenated in the channel dimension
                 #self.model = UNet(in_channels=len(self.inputs)*self.seq_length, 
-                #                  out_channels=len(self.outputs)*output_seq_len, init_features=32).float()
+                                  #out_channels=len(self.outputs)*output_seq_len, init_features=32).float()
+                
                 self.model = smp.Unet(
-                        encoder_name='vgg11',
+                        encoder_name=self.encoder,
                         encoder_weights=None,
                         in_channels=self.inputs_len*self.seq_length,
                         classes=len(self.outputs)*output_seq_len,
-                        encoder_depth = 5,
+                        encoder_depth = 4,
                         activation='identity',
+                        decoder_channels = (128, 64, 32, 16)
                     )
+                
             case 'miniunet':
                 self.model = MiniUNet(in_channels=self.inputs_len*self.seq_length, 
                                       out_channels=len(self.outputs)*output_seq_len, init_features=32).float()
@@ -140,12 +140,16 @@ class scenarIALightningModule(pl.LightningModule):
 
     def forward(self, x):
         if self.arch == 'unet':
+            #x = x.permute(0, 2, 3, 4, 1) # (B, lat, lon, C, T)
+            #x = x.contiguous()
+            #x = x.view(x.size(0), x.size(1), x.size(2), x.size(3)* x.size(4)) 
+            # for smp.UNet
             x = x.permute(0, 4, 1, 2, 3) # (B, C, T, lat, lon)
             x = x.contiguous()
             x = x.view(x.size(0), x.size(1) * x.size(2), x.size(3), x.size(4)) # (B, C, T, lat, lon) --> (B, C*T, lat, lon)
         y_hat = self.model(x)
-        #if self.arch == 'unet' or self.arch == 'miniunet':
-        #    y_hat = y_hat.unsqueeze(1) # (B, lat, lon, C) --> (B, 1, lat, lon, C)
+        #if self.arch == 'unet':
+            #y_hat = y_hat.unsqueeze(1) # (B, lat, lon, C) --> (B, 1, lat, lon, C)
         if y_hat.size(-1) == 1:
             y_hat = y_hat.squeeze(-1)
         return y_hat
@@ -208,8 +212,12 @@ class scenarIALightningModule(pl.LightningModule):
                 y_all = torch.cat(outputs['true'], dim=0).view(-1, self.img_size[0], self.img_size[1])
                 y_hat_all = torch.cat(outputs['hat'], dim=0).view(-1, self.img_size[0], self.img_size[1])
                 nrmse_s = NRMSE_ClimateBench(y_hat_all, y_all, self.lats.cpu())
+                nrmse_g_s = NRMSE_g_ClimateBench(y_hat_all, y_all, self.lats.cpu())
+                nrmse_s_s = NRMSE_s_ClimateBench(y_hat_all, y_all, self.lats.cpu())
                 nrmse_per_simu[simu_name] = nrmse_s
                 self.log(f'val_nrmse_{simu_name}', nrmse_s, on_step=False, on_epoch=True)
+                self.log(f'val_nrmse_g_{simu_name}', nrmse_g_s, on_step=False, on_epoch=True)
+                self.log(f'val_nrmse_s_{simu_name}', nrmse_s_s, on_step=False, on_epoch=True)
 
             nrmse = torch.stack(list(nrmse_per_simu.values())).sum()  # somme sur les simus
             self.log('val_nrmse', nrmse, on_step=False, on_epoch=True)

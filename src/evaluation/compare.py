@@ -185,7 +185,7 @@ if __name__=='__main__':
 
     graph_dir = GRAPHS_DIR/'runs/MPI-ESM1-2-LR/annual/exp9'
     title_base = runs['model_name'] + '_' + runs['timescale'] + '_' + simus_test + '_2080_2100'
-    title = title_base + '_benchmarkv1'
+    title = title_base + '_unet1_unet2'
     runs_dict = runs['compare']['runs_to_compare']
     eval_func = EvaluationPlots(config_plots=config_plots,
                                 simulation_name=simus_test,

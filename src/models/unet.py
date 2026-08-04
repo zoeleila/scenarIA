@@ -8,6 +8,7 @@ from collections import OrderedDict
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import segmentation_models_pytorch as smp
 import yaml
 
 from scenarIA.src.data.dataloader import get_dataloaders
@@ -122,16 +123,16 @@ class UNet(nn.Module):
 
 
 if __name__=='__main__':
-    model = UNet(in_channels=20, out_channels=1, init_features=32).float()
-    with open(CONFIG_DIR / 'config.yaml') as file:
-        config = yaml.safe_load(file)
-
-    train_dataloader = get_dataloaders('test', config)
-    first_batch = next(iter(train_dataloader))
-    # (B, T, lat, lon, C) --> (B, lat, lon, T*C)
-    x, y, _, _ = first_batch
-    x = x.view(1, 96, 192, 5*4).cuda().float()
-    print(x.shape, y.shape)
-    y_hat = model(x)
-    print('yhat',y_hat.shape)
+    in_channels = 20
+    out_channels = 1
     
+    model1 = UNet(in_channels=20, out_channels=1, init_features=32).float()
+    model2 = smp.Unet(
+                        encoder_name='vgg11',
+                        encoder_weights=None,
+                        in_channels=in_channels,
+                        classes=out_channels,
+                        encoder_depth = 4,
+                        activation='identity',
+                        decoder_channels = (128, 64, 32, 16)
+                    )

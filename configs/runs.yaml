@@ -7,58 +7,21 @@ compare:
   title: 'nb_member'
   runs_to_compare: # to compare version and cross-validation   
 
-    'unet_rmse_clim':
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed42_seq5_mem30/lightning_logs/version_22
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed43_seq5_mem30/lightning_logs/version_5
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed44_seq5_mem30/lightning_logs/version_4
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed45_seq5_mem30/lightning_logs/version_4
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed46_seq5_mem30/lightning_logs/version_4
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed47_seq5_mem30/lightning_logs/version_4
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed48_seq5_mem30/lightning_logs/version_4
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed49_seq5_mem30/lightning_logs/version_4
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed50_seq5_mem30/lightning_logs/version_4
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed51_seq5_mem30/lightning_logs/version_4
-
-    'unet_rmse':
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed42_seq5_mem30/lightning_logs/version_23
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed43_seq5_mem30/lightning_logs/version_6
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed44_seq5_mem30/lightning_logs/version_5
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed45_seq5_mem30/lightning_logs/version_5
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed46_seq5_mem30/lightning_logs/version_5
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed47_seq5_mem30/lightning_logs/version_5
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed48_seq5_mem30/lightning_logs/version_5
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed49_seq5_mem30/lightning_logs/version_5
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed50_seq5_mem30/lightning_logs/version_5
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed51_seq5_mem30/lightning_logs/version_5
-
-    'time-unet_rmse':
-    - MPI-ESM1-2-LR/annual/exp9/pr_time-unet_seed42_seq5_mem30/lightning_logs/version_5
-    - MPI-ESM1-2-LR/annual/exp9/pr_time-unet_seed43_seq5_mem30/lightning_logs/version_1
-    - MPI-ESM1-2-LR/annual/exp9/pr_time-unet_seed44_seq5_mem30/lightning_logs/version_1
-    - MPI-ESM1-2-LR/annual/exp9/pr_time-unet_seed45_seq5_mem30/lightning_logs/version_1
-    - MPI-ESM1-2-LR/annual/exp9/pr_time-unet_seed46_seq5_mem30/lightning_logs/version_1
-    - MPI-ESM1-2-LR/annual/exp9/pr_time-unet_seed47_seq5_mem30/lightning_logs/version_1
-    - MPI-ESM1-2-LR/annual/exp9/pr_time-unet_seed48_seq5_mem30/lightning_logs/version_1
-    - MPI-ESM1-2-LR/annual/exp9/pr_time-unet_seed49_seq5_mem30/lightning_logs/version_1
-    - MPI-ESM1-2-LR/annual/exp9/pr_time-unet_seed50_seq5_mem30/lightning_logs/version_1
-    - MPI-ESM1-2-LR/annual/exp9/pr_time-unet_seed51_seq5_mem30/lightning_logs/version_1
-
-
 
 
   predictions_to_compare: # to compare predictions (seeds mean)
 
 predict:
-    'rmse':
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed42_seq5_mem30/lightning_logs/version_23
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed43_seq5_mem30/lightning_logs/version_6
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed44_seq5_mem30/lightning_logs/version_5
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed45_seq5_mem30/lightning_logs/version_5
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed46_seq5_mem30/lightning_logs/version_5
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed47_seq5_mem30/lightning_logs/version_5
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed48_seq5_mem30/lightning_logs/version_5
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed49_seq5_mem30/lightning_logs/version_5
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed50_seq5_mem30/lightning_logs/version_5
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed51_seq5_mem30/lightning_logs/version_5
+  '_resnet18':
+    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed42_seq5_mem30/lightning_logs/version_30
+    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed43_seq5_mem30/lightning_logs/version_13
+    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed44_seq5_mem30/lightning_logs/version_12
+    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed45_seq5_mem30/lightning_logs/version_6
+    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed46_seq5_mem30/lightning_logs/version_6
+    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed47_seq5_mem30/lightning_logs/version_6
+    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed48_seq5_mem30/lightning_logs/version_6
+    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed49_seq5_mem30/lightning_logs/version_6
+    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed50_seq5_mem30/lightning_logs/version_6
+    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed51_seq5_mem30/lightning_logs/version_6
 
    
