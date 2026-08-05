@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from turtle import color
 import matplotlib.pyplot as plt
 import numpy as np
 import cartopy.crs as ccrs
@@ -572,7 +573,7 @@ def compare_temporal_profiles(y, y_hat_dict, t, var_name, lats, point=None, wind
 
 
 def compare_metrics(y, y_hat_dict, var_name, lats=None, title=None, save_dir=None,
-                    ensemble_scoring='scores_of_bootstrap_mean'):
+                    ensemble_scoring='scores_of_bootstrap_mean', figsize=(10, 4), colors:list=None, labels:list=None):
     '''
     Plot bar charts comparing metrics (NRMSE, sRMSE, gRMSE) for different tests.
 
@@ -590,11 +591,15 @@ def compare_metrics(y, y_hat_dict, var_name, lats=None, title=None, save_dir=Non
     lats = np.linspace(-90, 90, y.shape[-2]) if lats is None else lats
 
     metric_fns = {
-        'nrmse': lambda yh: NRMSE_ClimateBench(torch.tensor(yh), torch.tensor(y), torch.tensor(lats)),
-        'srmse': lambda yh: NRMSE_s_ClimateBench(torch.tensor(yh), torch.tensor(y), torch.tensor(lats),
+        'nrmse': lambda yh: NRMSE_ClimateBench(torch.tensor(yh), torch.tensor(y), torch.tensor(lats)), # Watson-Parris et al.
+        'snrmse': lambda yh: NRMSE_s_ClimateBench(torch.tensor(yh), torch.tensor(y), torch.tensor(lats), # Watson-Parris et al.
+                                                  normalize=True, weights_normalization='sum'),
+        'gnrmse': lambda yh: NRMSE_g_ClimateBench(torch.tensor(yh), torch.tensor(y), torch.tensor(lats), # Watson-Parris et al.
+                                                  normalize=True, weights_normalization='sum'),
+        'srmse': lambda yh: NRMSE_s_ClimateBench(torch.tensor(yh), torch.tensor(y), torch.tensor(lats), # Lutjens et al.
                                                   normalize=False, weights_normalization='sum'),
-        'grmse': lambda yh: NRMSE_g_ClimateBench(torch.tensor(yh), torch.tensor(y), torch.tensor(lats),
-                                                  normalize=False, weights_normalization='sum'),
+        'grmse': lambda yh: NRMSE_g_ClimateBench(torch.tensor(yh), torch.tensor(y), torch.tensor(lats), # Lutjens et al.
+                                                  normalize=False, weights_normalization='sum')
     }
 
     metric_dict = {m: {} for m in metric_fns}
@@ -639,21 +644,22 @@ def compare_metrics(y, y_hat_dict, var_name, lats=None, title=None, save_dir=Non
             metrics_values_mean = [metric_dict[metric][t].item() for t in test_names]
             print(f'{test_names} = {metrics_values_mean}')
 
-        plt.figure(figsize=(10, 4))
+        plt.figure(figsize=figsize)
         test_names = [name.replace(' ', '\n', 1) for name in test_names]
         if is_list:
             plt.bar(test_names, metrics_values_mean,
                     yerr=[np.array(metrics_values_mean) - np.array(metrics_values_lower),
                           np.array(metrics_values_upper) - np.array(metrics_values_mean)],
-                    capsize=5)
+                    capsize=5, color=colors, label=labels)
         else:
             plt.bar(test_names, metrics_values_mean)
-
+        plt.legend()
         plt.grid(axis='y', alpha=0.5)
         plt.title(f'{title} {ensemble_scoring}' if is_list else title)
         plt.ylabel(f'{var_name} {metric}')
-        plt.savefig(save_dir / f'{title}_{metric}_bar_plot_{var_name}_{ensemble_scoring}.png' if is_list 
-                    else save_dir / f'{title}_{metric}_bar_plot_{var_name}.png')
+        if save_dir:
+            plt.savefig(save_dir / f'{title}_{metric}_bar_plot_{var_name}_{ensemble_scoring}.png' if is_list
+                        else save_dir / f'{title}_{metric}_bar_plot_{var_name}.png')
 
 
 def compare_metric_changes_maps(y, y_hat_dict, t, var_name,
