@@ -8,7 +8,6 @@ import torch.nn.functional as F
 import numpy as np
 
 
-
 class CNNLSTMModel(nn.Module):
     def __init__(self, slider, height=96, width=144, channels=4,
                  conv_filters=20, conv_kernel=(3, 3), pool_size=2, lstm_units=25,
@@ -74,4 +73,4 @@ class CNNLSTMModel(nn.Module):
 if __name__ == "__main__":
     print('ok')
     model = CNNLSTMModel(slider=10, width=192, height=96, channels=4, conv_filters=20, conv_kernel=(3, 3), pool_size=2, lstm_units=64, output_seq_len=1)
-    
+    summary(model, input_size=(16, 10, 96, 192, 4))

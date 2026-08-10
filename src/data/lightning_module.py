@@ -21,6 +21,7 @@ from scenarIA.src.models.unet import UNet
 from scenarIA.src.models.miniunet import MiniUNet
 from scenarIA.src.models.time_unet import time_UNet
 from scenarIA.src.models.CNNLSTM import CNNLSTMModel
+from scenarIA.src.models.convlstm import ConvLSTM
 from scenarIA.src.utils.losses import LLweighted_MSELoss_Climax
 from scenarIA.src.utils.metrics import NRMSE_ClimateBench, LatWeightedRMSEMetric, NRMSE_g_ClimateBench, NRMSE_s_ClimateBench
 from scenarIA.src.utils.datautils import weighted_global_mean
@@ -138,6 +139,18 @@ class scenarIALightningModule(pl.LightningModule):
                     seq_len=self.seq_length,
                 ).float()
 
+            case 'convlstm':
+                hidden_dim = self.lstm_units
+                if isinstance(hidden_dim, int):
+                    hidden_dim = [hidden_dim]  # Convert to list if it's a single integer
+                self.model = ConvLSTM(input_dim=self.inputs_len, 
+                                    hidden_dim=hidden_dim, 
+                                    kernel_size=(3, 3),
+                                    num_layers=len(hidden_dim), 
+                                    batch_first=True, 
+                                    bias=True, 
+                                    return_all_layers=False)    
+
     def forward(self, x):
         if self.arch == 'unet':
             #x = x.permute(0, 2, 3, 4, 1) # (B, lat, lon, C, T)
@@ -156,7 +169,6 @@ class scenarIALightningModule(pl.LightningModule):
 
     def on_train_start(self):
         self.logger.experiment.add_custom_scalars(layout)
-        # self.logger.log_hyperparams(vars(self.hparams))
 
     def on_train_epoch_start(self):
         self.epoch_start_time = time.time()
@@ -219,7 +231,7 @@ class scenarIALightningModule(pl.LightningModule):
                 self.log(f'val_nrmse_g_{simu_name}', nrmse_g_s, on_step=False, on_epoch=True)
                 self.log(f'val_nrmse_s_{simu_name}', nrmse_s_s, on_step=False, on_epoch=True)
 
-            nrmse = torch.stack(list(nrmse_per_simu.values())).sum()  # somme sur les simus
+            nrmse = torch.stack(list(nrmse_per_simu.values())).sum() 
             self.log('val_nrmse', nrmse, on_step=False, on_epoch=True)
 
             # Tracking du best score

@@ -522,7 +522,9 @@ def compare_metrics_maps(y, y_hat_dict, var_name, title=None, save_dir=None,
     else:
         plt.show()
 
-def compare_temporal_profiles(y, y_hat_dict, t, var_name, lats, point=None, window_size:int=None, config_plots=None, title=None, save_dir=None):
+def compare_temporal_profiles(y, y_hat_dict, t, var_name, lats, point=None, 
+                              window_size:int=None, config_plots=None, colors=None, 
+                              title=None, save_dir=None):
 
     unit = config_plots[var_name]['unit'] if config_plots else ''
 
@@ -533,7 +535,7 @@ def compare_temporal_profiles(y, y_hat_dict, t, var_name, lats, point=None, wind
     vmin = y.min()*0.8 if (y.min() > 0) else y.min()*1.2
     vmax = y.max()*0.8 if (y.max() < 0) else y.max()*1.2
 
-    plt.figure(figsize=(8,5))
+    plt.figure(figsize=(6,4))
     for test, y_hat in y_hat_dict.items():
         if len(y_hat) > 1:
             y_hat = np.stack(y_hat, axis=0)
@@ -541,7 +543,7 @@ def compare_temporal_profiles(y, y_hat_dict, t, var_name, lats, point=None, wind
                 y_hat = y_hat[..., point[0], point[1]]
             else:
                 y_hat = weighted_global_mean(y_hat, lats)
-            y_hat_mean = y_hat.mean(axis=0)
+            y_hat_mean = y_hat.mean(axis=0) 
             y_hat_std = y_hat.std(axis=0)
         else:
             y_hat_mean = y_hat[0]
@@ -551,9 +553,9 @@ def compare_temporal_profiles(y, y_hat_dict, t, var_name, lats, point=None, wind
                 y_hat_mean = weighted_global_mean(y_hat_mean, lats)
             y_hat_std = np.zeros_like(y_hat_mean)
 
-        line, = plt.plot(t, y_hat_mean, label=f'pred {test}')
+        line, = plt.plot(t, y_hat_mean, label=f'pred {test}', color=colors[test] if colors else None, linewidth=2)
         color = line.get_color()
-        plt.fill_between(t, y_hat_mean - 2*y_hat_std, y_hat_mean + 2*y_hat_std, color=color, alpha=0.1)
+        plt.fill_between(t, y_hat_mean - 2*y_hat_std, y_hat_mean + 2*y_hat_std, color=color, alpha=0.2)
 
     if window_size:
         y_window = apply_moving_average(y, window_size)
@@ -565,7 +567,7 @@ def compare_temporal_profiles(y, y_hat_dict, t, var_name, lats, point=None, wind
     plt.ylim(vmin, vmax)
     plt.xlabel('Time')
     plt.ylabel(f'{var_name} {unit}')
-    plt.legend()
+    plt.legend(loc='upper left')
     plt.title(title)
     tests_str = '_'.join(y_hat_dict.keys())
     if save_dir:
@@ -591,14 +593,14 @@ def compare_metrics(y, y_hat_dict, var_name, lats=None, title=None, save_dir=Non
     lats = np.linspace(-90, 90, y.shape[-2]) if lats is None else lats
 
     metric_fns = {
-        'nrmse': lambda yh: NRMSE_ClimateBench(torch.tensor(yh), torch.tensor(y), torch.tensor(lats)), # Watson-Parris et al.
-        'snrmse': lambda yh: NRMSE_s_ClimateBench(torch.tensor(yh), torch.tensor(y), torch.tensor(lats), # Watson-Parris et al.
+        'NRMSE': lambda yh: NRMSE_ClimateBench(torch.tensor(yh), torch.tensor(y), torch.tensor(lats)), # Watson-Parris et al.
+        'NRMSEs': lambda yh: NRMSE_s_ClimateBench(torch.tensor(yh), torch.tensor(y), torch.tensor(lats), # Watson-Parris et al.
                                                   normalize=True, weights_normalization='sum'),
-        'gnrmse': lambda yh: NRMSE_g_ClimateBench(torch.tensor(yh), torch.tensor(y), torch.tensor(lats), # Watson-Parris et al.
+        'NRMSEg': lambda yh: NRMSE_g_ClimateBench(torch.tensor(yh), torch.tensor(y), torch.tensor(lats), # Watson-Parris et al.
                                                   normalize=True, weights_normalization='sum'),
-        'srmse': lambda yh: NRMSE_s_ClimateBench(torch.tensor(yh), torch.tensor(y), torch.tensor(lats), # Lutjens et al.
+        'RMSEs': lambda yh: NRMSE_s_ClimateBench(torch.tensor(yh), torch.tensor(y), torch.tensor(lats), # Lutjens et al.
                                                   normalize=False, weights_normalization='sum'),
-        'grmse': lambda yh: NRMSE_g_ClimateBench(torch.tensor(yh), torch.tensor(y), torch.tensor(lats), # Lutjens et al.
+        'RMSEg': lambda yh: NRMSE_g_ClimateBench(torch.tensor(yh), torch.tensor(y), torch.tensor(lats), # Lutjens et al.
                                                   normalize=False, weights_normalization='sum')
     }
 
@@ -650,7 +652,8 @@ def compare_metrics(y, y_hat_dict, var_name, lats=None, title=None, save_dir=Non
             plt.bar(test_names, metrics_values_mean,
                     yerr=[np.array(metrics_values_mean) - np.array(metrics_values_lower),
                           np.array(metrics_values_upper) - np.array(metrics_values_mean)],
-                    capsize=5, color=colors, label=labels)
+                    capsize=5, color=colors, label=labels,
+                    width=0.6)
         else:
             plt.bar(test_names, metrics_values_mean)
         plt.legend()
