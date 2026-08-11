@@ -93,7 +93,6 @@ class scenarIA(Dataset):
             self.time = [self.time[i] for i in perm]
             self.simus_all = [self.simus_all[i] for i in perm]
         
-        print('after', self.simus_all)
         print('final inputs shape shuffle', self.inputs.shape)
         print('final outputs shape shuffle', self.outputs.shape if self.outputs is not None else None)
         print('time length shuffle', len(self.time), self.time[0])
@@ -130,7 +129,6 @@ class scenarIA(Dataset):
         inputs_concat = np.concatenate(inputs_all, axis=0) if len(inputs_all) > 0 else np.array([])
         self.inputs = inputs_concat
         self.simus_all = simus_all
-        print(len(self.simus_all))
         if self.data_type == 'inference':
             self.time = time_all
             if self.predict_only_last_timestep:
@@ -420,12 +418,6 @@ if __name__=='__main__':
     with open(CONFIG_DIR / 'config.yaml') as file:
         config = yaml.safe_load(file)
 
-    dataloader = get_dataloaders('train', config=config)
-    for x, y, _, _ in dataloader:
-        plt.figure()
-        plt.contourf(x[0,0,:,:,-1])
-        plt.colorbar()
-        plt.savefig(GRAPHS_DIR/'test.png')
-        
-        print(x.shape)
-        break
+    dataset = scenarIA(transform=None,
+                       config=config,
+                       data_type='train')

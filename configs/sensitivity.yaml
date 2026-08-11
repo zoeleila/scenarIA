@@ -1,3 +1,7 @@
 base_config: scenarIA/configs/config.yaml
 grid:
-  train.seed: [42, 43, 44, 45, 46, 47, 48, 49, 50, 51]
+  train.lstm_units:
+    - [32]
+    - [64]
+    - [64, 64]
+    - [64, 128, 64]

@@ -4,11 +4,11 @@ data:
   raw_path: 'MPI-ESM1-2-LR/r1-r50i1p1f1/'
   dataset_path: 'MPI-ESM1-2-LR/annual/'
   seed_subsets: 42
-  nb_member_per_subsets: 350 # one-to-many approach. If n = 1, individual approach. TODO : remove
+  nb_member_per_subsets: 30 # one-to-many approach. If n = 1, individual approach. TODO : remove
   one_to_many: True
   nb_subsets: 1  # only if one-to-many is True TODO : remove
   piControl_diff: True
-  add_clim_to_predictors: False
+  add_clim_to_predictors: True
   predict_only_last_timestep: True
   timescale: 'annual'
   seq_length: 5
@@ -21,7 +21,7 @@ train: # for training
   arch: 'convlstm'
   learning_rate: 0.001
   max_epochs: 100
-  batch_size: 8
+  batch_size: 4
   runs_dir: 'MPI-ESM1-2-LR/annual/exp9/'
   inputs: ['CO2', 'SO2', 'CH4', 'BC', 'tau']
   outputs: ['pr']
@@ -32,7 +32,7 @@ train: # for training
   img_size: [96, 192]
   scheduler_step_size: 50
   scheduler_gamma: 0.1
-  lstm_units: [32, 64, 32]
+  lstm_units: [32, 32]
   monitor_metric: 'val_nrmse' # for best checkpointing and hyperparameter optimization
   early_stopping: 20
   encoder: 'vgg11'

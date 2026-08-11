@@ -171,15 +171,14 @@ class ConvLSTM(nn.Module):
             layer_output_list.append(layer_output)
             last_state_list.append([h, c])
 
+        # Modified
         if not self.return_all_layers:
-            layer_output_list = layer_output_list[-1:]
-            last_state_list = last_state_list[-1:]
-
-        #return layer_output_list, last_state_list
-        last_layer_output = layer_output_list[0]
-        last_time_step_output = last_layer_output[:, -1, :, :, :]
-        out = self.last_conv(last_time_step_output)
-        return out
+            last_layer_output = layer_output_list[-1]
+            last_time_step_output = last_layer_output[:, -1, :, :, :]
+            out = self.last_conv(last_time_step_output)
+            return out
+        else:
+             return layer_output_list, last_state_list
 
     def _init_hidden(self, batch_size, image_size):
         init_states = []
@@ -198,13 +197,14 @@ class ConvLSTM(nn.Module):
         if not isinstance(param, list):
             param = [param] * num_layers
         return param
-    
+
+
 
 if __name__ == "__main__":
     print('ok')
-    model = ConvLSTM(input_dim=4, hidden_dim=[32, 64, 32], kernel_size=(3, 3),
-                     num_layers=3, batch_first=True, bias=True, return_all_layers=False).cuda()
-    summary(model, input_size=(16, 10, 96, 192, 4))
-    x = torch.rand((16, 10, 96, 192, 4)).cuda()
+    model = ConvLSTM(input_dim=6, hidden_dim=[32, 32], kernel_size=(3, 3),
+                     num_layers=2, batch_first=True, bias=True, return_all_layers=False).cuda()
+    summary(model, input_size=(16, 10, 96, 192, 6))
+    x = torch.rand((16, 10, 96, 192, 6)).cuda()
     output = model(x)
     print(output.shape)
