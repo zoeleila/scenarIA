@@ -663,6 +663,8 @@ def compare_metrics(y, y_hat_dict, var_name, lats=None, title=None, save_dir=Non
         if save_dir:
             plt.savefig(save_dir / f'{title}_{metric}_bar_plot_{var_name}_{ensemble_scoring}.png' if is_list
                         else save_dir / f'{title}_{metric}_bar_plot_{var_name}.png')
+        else:
+            plt.show()
 
 
 def compare_metric_changes_maps(y, y_hat_dict, t, var_name,

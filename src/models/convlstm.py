@@ -202,8 +202,8 @@ class ConvLSTM(nn.Module):
 
 if __name__ == "__main__":
     print('ok')
-    model = ConvLSTM(input_dim=6, hidden_dim=[32, 32], kernel_size=(3, 3),
-                     num_layers=2, batch_first=True, bias=True, return_all_layers=False).cuda()
+    model = ConvLSTM(input_dim=6, hidden_dim=[64,128, 64], kernel_size=(3, 3),
+                     num_layers=3, batch_first=True, bias=True, return_all_layers=False).cuda()
     summary(model, input_size=(16, 10, 96, 192, 6))
     x = torch.rand((16, 10, 96, 192, 6)).cuda()
     output = model(x)

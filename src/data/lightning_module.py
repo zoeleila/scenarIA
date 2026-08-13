@@ -2,6 +2,8 @@
 
 """
 import sys
+
+from models import CNN
 sys.path.append('.')
 
 from pathlib import Path
@@ -17,6 +19,7 @@ import matplotlib.pyplot as plt
 import segmentation_models_pytorch as smp
 from torchmetrics import PearsonCorrCoef, MeanSquaredError, MeanAbsoluteError
 
+from scenarIA.src.models.CNN import CNNBase
 from scenarIA.src.models.unet import UNet
 from scenarIA.src.models.miniunet import MiniUNet
 from scenarIA.src.models.time_unet import time_UNet
@@ -83,6 +86,7 @@ class scenarIALightningModule(pl.LightningModule):
         self.monitor_metric = config['train'].get('monitor_metric', 'val_rmse') # for best checkpointing and hyperparameter optimization
 
         self.get_model()
+        self.time_per_epoch = []
         self.test_metrics = {}
         self.train_step_outputs = []
         self.val_step_outputs = []
@@ -105,8 +109,14 @@ class scenarIALightningModule(pl.LightningModule):
             output_seq_len = self.seq_length
         match self.arch:
             case 'cnn-lstm':
-                self.model = CNNLSTMModel(self.seq_length, height=self.img_size[0], width=self.img_size[1], channels=self.inputs_len,
-                                          output_seq_len=output_seq_len, lstm_units=self.lstm_units).float()
+                #self.model = CNNLSTMModel(self.seq_length, height=self.img_size[0], width=self.img_size[1], channels=self.inputs_len,
+                #                          output_seq_len=output_seq_len, lstm_units=self.lstm_units).float()
+                self.model = CNNBase(slider=self.seq_length, height=self.img_size[0], width=self.img_size[1], channels=self.inputs_len,
+                                     output_seq_len=output_seq_len, time_module_name='lstm', hidden_size=self.lstm_units).float()
+            case 'cnn-gru':
+                self.model = CNNBase(slider=self.seq_length, height=self.img_size[0], width=self.img_size[1], channels=self.inputs_len,
+                                     output_seq_len=output_seq_len, time_module_name='gru', hidden_size=self.lstm_units).float()
+            
             case 'unet':
                 # variables and timesteps are concatenated in the channel dimension
                 #self.model = UNet(in_channels=len(self.inputs)*self.seq_length, 
@@ -191,6 +201,8 @@ class scenarIALightningModule(pl.LightningModule):
         self.train_step_outputs.clear()
         epoch_duration = time.time() - self.epoch_start_time
         self.log("epoch_time", epoch_duration, on_step=False, on_epoch=True, prog_bar=True)
+        self.time_per_epoch.append(epoch_duration)
+
 
     def validation_step(self, batch, batch_idx):
         x, y, _, simu = batch
@@ -282,7 +294,10 @@ class scenarIALightningModule(pl.LightningModule):
 
         self.logger.log_hyperparams(
             flat_hparams,
-            {f"hp/{self.monitor_metric}": self.best_val_score}
+            {f"hp/{self.monitor_metric}": self.best_val_score,
+             "hp/final_duration": sum(self.time_per_epoch),
+             "hp/avg_epoch_duration": np.mean(self.time_per_epoch)
+            }
         )
         self.logger.experiment.flush()
 

@@ -21,7 +21,7 @@ train: # for training
   arch: 'convlstm'
   learning_rate: 0.001
   max_epochs: 100
-  batch_size: 4
+  batch_size: 8
   runs_dir: 'MPI-ESM1-2-LR/annual/exp9/'
   inputs: ['CO2', 'SO2', 'CH4', 'BC', 'tau']
   outputs: ['pr']
@@ -32,7 +32,7 @@ train: # for training
   img_size: [96, 192]
   scheduler_step_size: 50
   scheduler_gamma: 0.1
-  lstm_units: [32, 32]
+  lstm_units: [64, 64]
   monitor_metric: 'val_nrmse' # for best checkpointing and hyperparameter optimization
   early_stopping: 20
   encoder: 'vgg11'

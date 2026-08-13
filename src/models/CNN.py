@@ -91,7 +91,7 @@ class CNNBase(nn.Module):
 if __name__ == "__main__":
     print('ok')
     model = CNNBase(slider=5, width=192, height=96, 
-                    channels=4, time_module_name='lstm', hidden_size=64,
+                    channels=4, time_module_name='gru', hidden_size=64,
                     conv_filters=20, conv_kernel=(3, 3), pool_size=2,
                     output_seq_len=1)
 
