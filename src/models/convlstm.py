@@ -120,7 +120,7 @@ class ConvLSTM(nn.Module):
                                           bias=self.bias))
 
         self.cell_list = nn.ModuleList(cell_list)
-        self.last_conv = nn.Conv2d(self.hidden_dim[-1], 1, kernel_size=1)
+        self.last_conv = nn.Conv2d(self.hidden_dim[-1], 1, kernel_size=1) # Modified : Added to return 1 channel output
 
     def forward(self, input_tensor, hidden_state=None):
         """

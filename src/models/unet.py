@@ -127,6 +127,8 @@ if __name__=='__main__':
     out_channels = 1
     
     model1 = UNet(in_channels=20, out_channels=1, init_features=32).float()
+    summary(model1, input_size=(1, 96, 192, in_channels))
+    
     model2 = smp.Unet(
                         encoder_name='vgg11',
                         encoder_weights=None,

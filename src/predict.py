@@ -94,7 +94,8 @@ def save_predictions_as_netcdf(runs_to_predict, data_type='test', simus_to_predi
     exp = hparams['data']['exp']
     simu_test = hparams['train']['simus_test'][0]
     max_epochs = hparams['train']['max_epochs']
-    filename = f'{model_name}_{timescale}_{exp}_{simu_test}_{test_name}_epoch{max_epochs}{exp_name}.nc'
+    bs = hparams['train']['batch_size']
+    filename = f'{model_name}_{timescale}_{exp}_{simu_test}_{test_name}_epoch{max_epochs}_bs{bs}_{exp_name}.nc'
     os.makedirs(PREDICTIONS_DIR / model_name / timescale / exp, exist_ok=True)
     ds.to_netcdf(PREDICTIONS_DIR / model_name / timescale / exp / filename) # create directories if they don't exist
     

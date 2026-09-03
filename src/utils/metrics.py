@@ -2,6 +2,7 @@ from locale import normalize
 import torch
 from scenarIA.src.utils.datautils import compute_weights_from_lats, weighted_global_mean
 from torchmetrics import Metric
+from scipy import stats
 
 
 
@@ -10,6 +11,25 @@ def MSE(y_hat: torch.Tensor, y: torch.Tensor):
 
 def RMSE(y_hat: torch.Tensor, y: torch.Tensor):
     return torch.mean(torch.sqrt(MSE(y_hat, y)))
+
+def SpatialCorr(y_hat: torch.Tensor, y: torch.Tensor):
+    if y.dim() == 4: # batch, time, lat, lon
+        y = y.mean(dim=0)
+        y_hat = y_hat.mean(dim=0)
+    corr = [stats.pearsonr(y[i].flatten(), y_hat[i].flatten()).statistic for i in range(y.shape[0])]
+    return torch.Tensor(corr).mean()
+
+def TemporalCorr(y_hat: torch.Tensor, y: torch.Tensor):
+    if y.dim() == 4: # batch, time, lat, lon
+        y = y.mean(dim=0)
+        y_hat = y_hat.mean(dim=0)
+    # time, lat, lon 
+    y = y.flatten(start_dim=1)
+    y_hat = y_hat.flatten(start_dim=1)
+    corr = [stats.pearsonr(y[:,i].flatten(), y_hat[:,i].flatten()).statistic for i in range(y.shape[-1])]
+    return torch.Tensor(corr).mean()
+
+
 
 def NRMSE_s_ClimateBench(y_hat: torch.Tensor, y: torch.Tensor, lats: torch.Tensor, normalize=True, weights_normalization=None):
     if y.dim() == 4: # batch, time, lat, lon

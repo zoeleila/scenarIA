@@ -21,10 +21,10 @@ from torchmetrics import PearsonCorrCoef, MeanSquaredError, MeanAbsoluteError
 
 from scenarIA.src.models.CNN import CNNBase
 from scenarIA.src.models.unet import UNet
-from scenarIA.src.models.miniunet import MiniUNet
 from scenarIA.src.models.time_unet import time_UNet
-from scenarIA.src.models.CNNLSTM import CNNLSTMModel
 from scenarIA.src.models.convlstm import ConvLSTM
+from scenarIA.src.models.convgru import ConvGRU
+from scenarIA.src.models.trajGRU import TrajGRUMultiLayer
 from scenarIA.src.utils.losses import LLweighted_MSELoss_Climax
 from scenarIA.src.utils.metrics import NRMSE_ClimateBench, LatWeightedRMSEMetric, NRMSE_g_ClimateBench, NRMSE_s_ClimateBench
 from scenarIA.src.utils.datautils import weighted_global_mean
@@ -58,6 +58,7 @@ class scenarIALightningModule(pl.LightningModule):
         self.scheduler_step_size = config['train']['scheduler_step_size']
         self.scheduler_gamma = config['train']['scheduler_gamma']
         
+        self.unet_features = config['train'].get('unet_features', 32) # for old runs
         self.lstm_units = config['train'].get('lstm_units', 25) # for old runs
         self.arch = config['train'].get('arch', 'cnn-lstm')
         self.encoder = config['train'].get('encoder', 'resnet18')
@@ -68,7 +69,6 @@ class scenarIALightningModule(pl.LightningModule):
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.lats = lats.to(device) if lats is not None else torch.linspace(-90, 90, self.img_size[0]).to(device)
         self.loss = LLweighted_MSELoss_Climax(lats=self.lats)
-        #self.loss = nn.MSELoss()
         
         # Define metrics for test set evaluation
         self.metrics_dict = nn.ModuleDict({
@@ -102,15 +102,13 @@ class scenarIALightningModule(pl.LightningModule):
             config_plots = yaml.safe_load(file)
         self.config_plots = config_plots
 
-    def get_model(self):
+    def get_model(self): # à modifier un jour pour ne pas avoir à donner les hp de haque archis à chaque fois
         if self.predict_only_last_timestep:
             output_seq_len = 1
         else:
             output_seq_len = self.seq_length
         match self.arch:
             case 'cnn-lstm':
-                #self.model = CNNLSTMModel(self.seq_length, height=self.img_size[0], width=self.img_size[1], channels=self.inputs_len,
-                #                          output_seq_len=output_seq_len, lstm_units=self.lstm_units).float()
                 self.model = CNNBase(slider=self.seq_length, height=self.img_size[0], width=self.img_size[1], channels=self.inputs_len,
                                      output_seq_len=output_seq_len, time_module_name='lstm', hidden_size=self.lstm_units).float()
             case 'cnn-gru':
@@ -119,23 +117,9 @@ class scenarIALightningModule(pl.LightningModule):
             
             case 'unet':
                 # variables and timesteps are concatenated in the channel dimension
-                #self.model = UNet(in_channels=len(self.inputs)*self.seq_length, 
-                                  #out_channels=len(self.outputs)*output_seq_len, init_features=32).float()
-                
-                self.model = smp.Unet(
-                        encoder_name=self.encoder,
-                        encoder_weights=None,
-                        in_channels=self.inputs_len*self.seq_length,
-                        classes=len(self.outputs)*output_seq_len,
-                        encoder_depth = 4,
-                        activation='identity',
-                        decoder_channels = (128, 64, 32, 16)
-                    )
-                
-            case 'miniunet':
-                self.model = MiniUNet(in_channels=self.inputs_len*self.seq_length, 
-                                      out_channels=len(self.outputs)*output_seq_len, init_features=32).float()
-                
+                self.model = UNet(in_channels=self.inputs_len*self.seq_length, 
+                                  out_channels=len(self.outputs)*output_seq_len, 
+                                  init_features=self.unet_features).float()
             case 'time-unet':
                 self.model = time_UNet(
                     in_var_ids=self.inputs.append('climatology') if self.add_clim_to_predictors else self.inputs,
@@ -159,20 +143,37 @@ class scenarIALightningModule(pl.LightningModule):
                                     num_layers=len(hidden_dim), 
                                     batch_first=True, 
                                     bias=True, 
-                                    return_all_layers=False)    
+                                    return_all_layers=False) 
+            case 'convgru':
+                hidden_dim = self.lstm_units
+                if isinstance(hidden_dim, int):
+                    hidden_dim = [hidden_dim]  # Convert to list if it's a single integer
+                self.model = ConvGRU(input_size=(self.img_size[0], self.img_size[1]),
+                                    input_dim=self.inputs_len, 
+                                    hidden_dim=hidden_dim, 
+                                    kernel_size=(3, 3),
+                                    num_layers=len(hidden_dim), 
+                                    batch_first=True, 
+                                    bias=True, 
+                                    return_all_layers=False) 
+            case 'trajgru':
+                self.model = TrajGRUMultiLayer(input_size=(self.img_size[0], self.img_size[1]), 
+                                            input_dim=self.inputs_len, 
+                                            hidden_dim=self.lstm_units, 
+                                            L=5, 
+                                            num_layers=1,
+                                            batch_first=True, 
+                                            return_all_layers=False).cuda()         
 
     def forward(self, x):
         if self.arch == 'unet':
-            #x = x.permute(0, 2, 3, 4, 1) # (B, lat, lon, C, T)
-            #x = x.contiguous()
-            #x = x.view(x.size(0), x.size(1), x.size(2), x.size(3)* x.size(4)) 
-            # for smp.UNet
-            x = x.permute(0, 4, 1, 2, 3) # (B, C, T, lat, lon)
+            x = x.permute(0, 2, 3, 4, 1) # (B, lat, lon, C, T)
             x = x.contiguous()
-            x = x.view(x.size(0), x.size(1) * x.size(2), x.size(3), x.size(4)) # (B, C, T, lat, lon) --> (B, C*T, lat, lon)
+            x = x.view(x.size(0), x.size(1), x.size(2), x.size(3)* x.size(4)) 
+
         y_hat = self.model(x)
-        #if self.arch == 'unet':
-            #y_hat = y_hat.unsqueeze(1) # (B, lat, lon, C) --> (B, 1, lat, lon, C)
+        if self.arch == 'unet':
+            y_hat = y_hat.unsqueeze(1) # (B, lat, lon, C) --> (B, 1, lat, lon, C)
         if y_hat.size(-1) == 1:
             y_hat = y_hat.squeeze(-1)
         return y_hat

@@ -9,10 +9,9 @@ import cartopy.feature as cfeature
 import torch
 import pandas as pd
 import yaml
-from scipy import stats
 
 from scenarIA.src.utils.datautils import weighted_global_mean, apply_moving_average, get_statistics_from_bootstrap
-from scenarIA.src.utils.metrics import NRMSE_ClimateBench, NRMSE_g_ClimateBench, NRMSE_s_ClimateBench
+from scenarIA.src.utils.metrics import NRMSE_ClimateBench, NRMSE_g_ClimateBench, NRMSE_s_ClimateBench, SpatialCorr, TemporalCorr
 from scenarIA.src.utils.settings import CONFIG_DIR, GRAPHS_DIR, RUNS_DIR, DATASET_DIR
 from scenarIA.src.utils.plotutils import plot_map_image, plot_map_contour
 
@@ -601,7 +600,8 @@ def compare_metrics(y, y_hat_dict, var_name, lats=None, title=None, save_dir=Non
         'RMSEs': lambda yh: NRMSE_s_ClimateBench(torch.tensor(yh), torch.tensor(y), torch.tensor(lats), # Lutjens et al.
                                                   normalize=False, weights_normalization='sum'),
         'RMSEg': lambda yh: NRMSE_g_ClimateBench(torch.tensor(yh), torch.tensor(y), torch.tensor(lats), # Lutjens et al.
-                                                  normalize=False, weights_normalization='sum')
+                                                  normalize=False, weights_normalization='sum'),
+        'SpatialCorr': lambda yh: SpatialCorr(torch.tensor(yh), torch.tensor(y)),
     }
 
     metric_dict = {m: {} for m in metric_fns}
@@ -647,7 +647,7 @@ def compare_metrics(y, y_hat_dict, var_name, lats=None, title=None, save_dir=Non
             print(f'{test_names} = {metrics_values_mean}')
 
         plt.figure(figsize=figsize)
-        test_names = [name.replace(' ', '\n', 1) for name in test_names]
+        test_names = [name.replace(' ', '\n') for name in test_names]
         if is_list:
             plt.bar(test_names, metrics_values_mean,
                     yerr=[np.array(metrics_values_mean) - np.array(metrics_values_lower),
@@ -660,6 +660,8 @@ def compare_metrics(y, y_hat_dict, var_name, lats=None, title=None, save_dir=Non
         plt.grid(axis='y', alpha=0.5)
         plt.title(f'{title} {ensemble_scoring}' if is_list else title)
         plt.ylabel(f'{var_name} {metric}')
+        if metric.endswith('Corr'):
+            plt.ylim(0.9, 1)
         if save_dir:
             plt.savefig(save_dir / f'{title}_{metric}_bar_plot_{var_name}_{ensemble_scoring}.png' if is_list
                         else save_dir / f'{title}_{metric}_bar_plot_{var_name}.png')
