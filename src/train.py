@@ -83,4 +83,5 @@ if __name__ == "__main__":
 
     with open(CONFIG_DIR / args.config) as file:
         config = yaml.safe_load(file)
+        print(config)
     run(config)

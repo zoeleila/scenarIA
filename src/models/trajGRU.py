@@ -1,6 +1,7 @@
 '''
 Modified
 https://github.com/Hzzone/Precipitation-Nowcasting/blob/master/nowcasting/models/trajGRU.py
+Active convolution
 '''
 
 import torch
@@ -83,7 +84,7 @@ class TrajGRU(BaseConvRNN):
     Only one layer is implemented
     '''
     # b_h_w: input feature map size
-    def __init__(self, input_channel, num_filter, b_h_w, zoneout=0.0, L=5,
+    def __init__(self, input_channel, num_filter, b_h_w, zoneout=0.0, L=5, # L in [5, 9, 13]
                  i2h_kernel=(3, 3), i2h_stride=(1, 1), i2h_pad=(1, 1),
                  h2h_kernel=(5, 5), h2h_dilate=(1, 1),
                  act_type=activation('leaky', negative_slope=0.2, inplace=True)): # to match the original implementation, we use leaky relu as the activation function 

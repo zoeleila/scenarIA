@@ -8,8 +8,6 @@ from collections import OrderedDict
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import segmentation_models_pytorch as smp
-import yaml
 
 from scenarIA.src.data.dataloader import get_dataloaders
 from scenarIA.src.utils.settings import CONFIG_DIR
@@ -60,7 +58,7 @@ class UNet(nn.Module):
         return x, (h, w)
 
     def forward(self, x):
-        x = x.permute(0, 3, 1, 2) # change to (B, C, H, W)
+        #x = x.permute(0, 3, 1, 2) # change to (B, C, H, W)
         x, (h, w) = self._pad_(x)
 
         enc1 = self.encoder1(x)
@@ -129,12 +127,4 @@ if __name__=='__main__':
     model1 = UNet(in_channels=20, out_channels=1, init_features=32).float()
     summary(model1, input_size=(1, 96, 192, in_channels))
     
-    model2 = smp.Unet(
-                        encoder_name='vgg11',
-                        encoder_weights=None,
-                        in_channels=in_channels,
-                        classes=out_channels,
-                        encoder_depth = 4,
-                        activation='identity',
-                        decoder_channels = (128, 64, 32, 16)
-                    )
+

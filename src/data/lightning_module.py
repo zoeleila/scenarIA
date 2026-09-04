@@ -25,6 +25,7 @@ from scenarIA.src.models.time_unet import time_UNet
 from scenarIA.src.models.convlstm import ConvLSTM
 from scenarIA.src.models.convgru import ConvGRU
 from scenarIA.src.models.trajGRU import TrajGRUMultiLayer
+from scenarIA.src.models.smaat_unet import SmaAt_UNet
 from scenarIA.src.utils.losses import LLweighted_MSELoss_Climax
 from scenarIA.src.utils.metrics import NRMSE_ClimateBench, LatWeightedRMSEMetric, NRMSE_g_ClimateBench, NRMSE_s_ClimateBench
 from scenarIA.src.utils.datautils import weighted_global_mean
@@ -58,10 +59,12 @@ class scenarIALightningModule(pl.LightningModule):
         self.scheduler_step_size = config['train']['scheduler_step_size']
         self.scheduler_gamma = config['train']['scheduler_gamma']
         
+        # Hyperparameters for different architectures
         self.unet_features = config['train'].get('unet_features', 32) # for old runs
         self.lstm_units = config['train'].get('lstm_units', 25) # for old runs
         self.arch = config['train'].get('arch', 'cnn-lstm')
         self.encoder = config['train'].get('encoder', 'resnet18')
+        self.L = config['train'].get('links', 9) # for trajgru
 
         self.predict_only_last_timestep = config['data']['predict_only_last_timestep']
         os.makedirs(self.runs_dir, exist_ok=True)
@@ -102,7 +105,7 @@ class scenarIALightningModule(pl.LightningModule):
             config_plots = yaml.safe_load(file)
         self.config_plots = config_plots
 
-    def get_model(self): # à modifier un jour pour ne pas avoir à donner les hp de haque archis à chaque fois
+    def get_model(self): # à modifier un jour pour ne pas avoir à donner les hp de chaque archis à chaque fois
         if self.predict_only_last_timestep:
             output_seq_len = 1
         else:
@@ -143,7 +146,7 @@ class scenarIALightningModule(pl.LightningModule):
                                     num_layers=len(hidden_dim), 
                                     batch_first=True, 
                                     bias=True, 
-                                    return_all_layers=False) 
+                                    return_all_layers=False).float()
             case 'convgru':
                 hidden_dim = self.lstm_units
                 if isinstance(hidden_dim, int):
@@ -155,24 +158,26 @@ class scenarIALightningModule(pl.LightningModule):
                                     num_layers=len(hidden_dim), 
                                     batch_first=True, 
                                     bias=True, 
-                                    return_all_layers=False) 
+                                    return_all_layers=False).float()
             case 'trajgru':
                 self.model = TrajGRUMultiLayer(input_size=(self.img_size[0], self.img_size[1]), 
                                             input_dim=self.inputs_len, 
                                             hidden_dim=self.lstm_units, 
-                                            L=5, 
+                                            L=self.L, 
                                             num_layers=1,
                                             batch_first=True, 
-                                            return_all_layers=False).cuda()         
+                                            return_all_layers=False).float()
+            case 'smaat-unet':
+                self.model = SmaAt_UNet(n_channels=self.inputs_len*self.seq_length, 
+                                        n_classes=len(self.outputs)*output_seq_len).float()
 
     def forward(self, x):
-        if self.arch == 'unet':
-            x = x.permute(0, 2, 3, 4, 1) # (B, lat, lon, C, T)
+        if self.arch in ['unet', 'smaat-unet']:
+            x = x.permute(0, 4, 1, 2, 3) # (B, C, T, lat, lon)
             x = x.contiguous()
-            x = x.view(x.size(0), x.size(1), x.size(2), x.size(3)* x.size(4)) 
-
+            x = x.view(x.size(0), x.size(1)*x.size(2), x.size(3), x.size(4)) 
         y_hat = self.model(x)
-        if self.arch == 'unet':
+        if self.arch in ['unet']:
             y_hat = y_hat.unsqueeze(1) # (B, lat, lon, C) --> (B, 1, lat, lon, C)
         if y_hat.size(-1) == 1:
             y_hat = y_hat.squeeze(-1)
@@ -236,6 +241,7 @@ class scenarIALightningModule(pl.LightningModule):
             for simu_name, outputs in self.val_outputs_per_simu.items():
                 y_all = torch.cat(outputs['true'], dim=0).view(-1, self.img_size[0], self.img_size[1])
                 y_hat_all = torch.cat(outputs['hat'], dim=0).view(-1, self.img_size[0], self.img_size[1])
+                print('coucou', y_hat_all.shape, y_all.shape)
                 nrmse_s = NRMSE_ClimateBench(y_hat_all, y_all, self.lats.cpu())
                 nrmse_g_s = NRMSE_g_ClimateBench(y_hat_all, y_all, self.lats.cpu())
                 nrmse_s_s = NRMSE_s_ClimateBench(y_hat_all, y_all, self.lats.cpu())

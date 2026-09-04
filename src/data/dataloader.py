@@ -277,16 +277,7 @@ def get_climatology(config, climatology_simu: str='piControl', period=['1850-01-
     climatology = ds.to_array().transpose('lat', 'lon', 'variable').to_numpy()
     return climatology
 
-def get_dataloaders(data_type: str, config:dict, transforms:bool=True) -> DataLoader:
-    """
-    Creates and returns a PyTorch DataLoader for the specified data type.
-    Args:
-        data_type (str): The type of data to load. Expected values are 'train' or other types
-                            (e.g., 'validation', 'test'). Determines the shuffle behavior and batch size.
-    Returns:
-        DataLoader: A PyTorch DataLoader object configured with the appropriate dataset,
-                    transformations, batch size, and shuffle settings.
-    """
+def get_dataset(config, data_type: str = 'train', transforms: bool = True):
     seed = config['train']['seed']
     if transforms:
         runs_dir = RUNS_DIR / config['train']['runs_dir']
@@ -315,7 +306,20 @@ def get_dataloaders(data_type: str, config:dict, transforms:bool=True) -> DataLo
     dataset = scenarIA(transform=transforms,
                             config=config,
                             data_type=data_type)
-    
+    return dataset
+
+def get_dataloaders(data_type: str, config:dict, transforms:bool=True) -> DataLoader:
+    """
+    Creates and returns a PyTorch DataLoader for the specified data type.
+    Args:
+        data_type (str): The type of data to load. Expected values are 'train' or other types
+                            (e.g., 'validation', 'test'). Determines the shuffle behavior and batch size.
+    Returns:
+        DataLoader: A PyTorch DataLoader object configured with the appropriate dataset,
+                    transformations, batch size, and shuffle settings.
+    """
+
+    dataset = get_dataset(config, data_type=data_type, transforms=transforms)
     if data_type == 'train':
         batch_size = config['train']['batch_size']
         shuffle = True
@@ -418,6 +422,8 @@ if __name__=='__main__':
     with open(CONFIG_DIR / 'config.yaml') as file:
         config = yaml.safe_load(file)
 
-    dataset = scenarIA(transform=None,
-                       config=config,
-                       data_type='train')
+    train_dataloader = get_dataloaders('train', config)
+    for batch in train_dataloader:
+        x, y, _, _ = batch
+        print(x.shape, y.shape)
+        break
