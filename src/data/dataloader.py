@@ -109,10 +109,10 @@ class scenarIA(Dataset):
         simus_all = []
 
         for simu in self.simus:
-            inputs_xr = xr.open_dataset(self.dataset_path / f'inputs_{simu}_regrid.nc')[self.inputs_var_list]
+            inputs_xr = xr.open_dataset(self.dataset_path / f'inputs_{simu}_regrid2.nc')[self.inputs_var_list]
             if self.data_type == 'test' and self.seq_length > 1:
                 hist_xr = xr.open_dataset(
-                    self.dataset_path / f'inputs_historical_regrid.nc')[self.inputs_var_list]
+                    self.dataset_path / f'inputs_historical_regrid2.nc')[self.inputs_var_list]
                 inputs_xr = xr.concat([hist_xr.isel(time=slice(-self.seq_length+1, None)), inputs_xr], dim='time')
 
             for _ in range(self.nb_subsets if self.one_to_many else 1):

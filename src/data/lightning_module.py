@@ -26,6 +26,7 @@ from scenarIA.src.models.convlstm import ConvLSTM
 from scenarIA.src.models.convgru import ConvGRU
 from scenarIA.src.models.trajGRU import TrajGRUMultiLayer
 from scenarIA.src.models.smaat_unet import SmaAt_UNet
+from scenarIA.src.models.attention_unet import AttentionUNet
 from scenarIA.src.utils.losses import LLweighted_MSELoss_Climax
 from scenarIA.src.utils.metrics import NRMSE_ClimateBench, LatWeightedRMSEMetric, NRMSE_g_ClimateBench, NRMSE_s_ClimateBench
 from scenarIA.src.utils.datautils import weighted_global_mean
@@ -64,7 +65,7 @@ class scenarIALightningModule(pl.LightningModule):
         self.lstm_units = config['train'].get('lstm_units', 25) # for old runs
         self.arch = config['train'].get('arch', 'cnn-lstm')
         self.encoder = config['train'].get('encoder', 'resnet18')
-        self.L = config['train'].get('links', 9) # for trajgru
+        self.L = config['train'].get('links', 5) # for trajgru
 
         self.predict_only_last_timestep = config['data']['predict_only_last_timestep']
         os.makedirs(self.runs_dir, exist_ok=True)
@@ -169,10 +170,16 @@ class scenarIALightningModule(pl.LightningModule):
                                             return_all_layers=False).float()
             case 'smaat-unet':
                 self.model = SmaAt_UNet(n_channels=self.inputs_len*self.seq_length, 
-                                        n_classes=len(self.outputs)*output_seq_len).float()
+                                        n_classes=len(self.outputs)*output_seq_len,
+                                        in_features=self.unet_features,
+                                        bilinear=False).float()
+            case 'attention-unet':
+                self.model = AttentionUNet(img_ch=self.inputs_len*self.seq_length,
+                                           output_ch=len(self.outputs)*output_seq_len,
+                                           in_features=self.unet_features).float()
 
     def forward(self, x):
-        if self.arch in ['unet', 'smaat-unet']:
+        if self.arch in ['unet', 'smaat-unet', 'attention-unet']:
             x = x.permute(0, 4, 1, 2, 3) # (B, C, T, lat, lon)
             x = x.contiguous()
             x = x.view(x.size(0), x.size(1)*x.size(2), x.size(3), x.size(4)) 

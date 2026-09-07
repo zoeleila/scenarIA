@@ -1,11 +1,12 @@
 '''
 https://github.com/sfczekalski/attention_unet/blob/master/model.py
+
+Attention U-Net: Learning Where to Look for the Pancreas
 '''
 
 from re import A
 import torch
 import torch.nn as nn
-from torchinfo import summary
 
 class ConvBlock(nn.Module):
 
@@ -91,34 +92,34 @@ class AttentionBlock(nn.Module):
 
 class AttentionUNet(nn.Module):
 
-    def __init__(self, img_ch=3, output_ch=1):
+    def __init__(self, img_ch=3, output_ch=1, in_features=64):
         super(AttentionUNet, self).__init__()
 
         self.MaxPool = nn.MaxPool2d(kernel_size=2, stride=2)
 
-        self.Conv1 = ConvBlock(img_ch, 64) # or 32 ?
-        self.Conv2 = ConvBlock(64, 128)
-        self.Conv3 = ConvBlock(128, 256)
-        self.Conv4 = ConvBlock(256, 512)
+        self.Conv1 = ConvBlock(img_ch, in_features) # or 32 ?
+        self.Conv2 = ConvBlock(in_features, in_features*2)
+        self.Conv3 = ConvBlock(in_features*2, in_features*4)
+        self.Conv4 = ConvBlock(in_features*4, in_features*8)
         #self.Conv5 = ConvBlock(512, 1024)
 
         #self.Up5 = UpConv(1024, 512)
         #self.Att5 = AttentionBlock(F_g=512, F_l=512, n_coefficients=256)
         #self.UpConv5 = ConvBlock(1024, 512)
 
-        self.Up4 = UpConv(512, 256)
-        self.Att4 = AttentionBlock(F_g=256, F_l=256, n_coefficients=128)
-        self.UpConv4 = ConvBlock(512, 256)
+        self.Up4 = UpConv(in_features*8, in_features*4)
+        self.Att4 = AttentionBlock(F_g=in_features*4, F_l=in_features*4, n_coefficients=in_features*2)
+        self.UpConv4 = ConvBlock(in_features*8, in_features*4)
 
-        self.Up3 = UpConv(256, 128)
-        self.Att3 = AttentionBlock(F_g=128, F_l=128, n_coefficients=64)
-        self.UpConv3 = ConvBlock(256, 128)
+        self.Up3 = UpConv(in_features*4, in_features*2)
+        self.Att3 = AttentionBlock(F_g=in_features*2, F_l=in_features*2, n_coefficients=in_features)
+        self.UpConv3 = ConvBlock(in_features*4, in_features*2)
 
-        self.Up2 = UpConv(128, 64)
-        self.Att2 = AttentionBlock(F_g=64, F_l=64, n_coefficients=32)
-        self.UpConv2 = ConvBlock(128, 64)
+        self.Up2 = UpConv(in_features*2, in_features)
+        self.Att2 = AttentionBlock(F_g=in_features, F_l=in_features, n_coefficients=in_features//2)
+        self.UpConv2 = ConvBlock(in_features*2, in_features)
 
-        self.Conv = nn.Conv2d(64, output_ch, kernel_size=1, stride=1, padding=0)
+        self.Conv = nn.Conv2d(in_features, output_ch, kernel_size=1, stride=1, padding=0)
 
     def forward(self, x):
         """

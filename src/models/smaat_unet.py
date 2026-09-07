@@ -170,6 +170,7 @@ class SmaAt_UNet(nn.Module):
         self,
         n_channels,
         n_classes,
+        in_features, # Modified : add in_features parameter
         kernels_per_layer=2,
         bilinear=True,
         reduction_ratio=16,
@@ -177,27 +178,28 @@ class SmaAt_UNet(nn.Module):
         super().__init__()
         self.n_channels = n_channels
         self.n_classes = n_classes
+        self.in_features = in_features
         kernels_per_layer = kernels_per_layer
         self.bilinear = bilinear
         reduction_ratio = reduction_ratio
 
-        self.inc = DoubleConvDS(self.n_channels, 64, kernels_per_layer=kernels_per_layer)
-        self.cbam1 = CBAM(64, reduction_ratio=reduction_ratio)
-        self.down1 = DownDS(64, 128, kernels_per_layer=kernels_per_layer)
-        self.cbam2 = CBAM(128, reduction_ratio=reduction_ratio)
-        self.down2 = DownDS(128, 256, kernels_per_layer=kernels_per_layer)
-        self.cbam3 = CBAM(256, reduction_ratio=reduction_ratio)
-        self.down3 = DownDS(256, 512, kernels_per_layer=kernels_per_layer)
-        self.cbam4 = CBAM(512, reduction_ratio=reduction_ratio)
+        self.inc = DoubleConvDS(self.n_channels, in_features, kernels_per_layer=kernels_per_layer)
+        self.cbam1 = CBAM(in_features, reduction_ratio=reduction_ratio)
+        self.down1 = DownDS(in_features, in_features*2, kernels_per_layer=kernels_per_layer)
+        self.cbam2 = CBAM(in_features*2, reduction_ratio=reduction_ratio)
+        self.down2 = DownDS(in_features*2, in_features*4, kernels_per_layer=kernels_per_layer)
+        self.cbam3 = CBAM(in_features*4, reduction_ratio=reduction_ratio)
+        self.down3 = DownDS(in_features*4, in_features*8, kernels_per_layer=kernels_per_layer)
+        self.cbam4 = CBAM(in_features*8, reduction_ratio=reduction_ratio)
         factor = 2 if self.bilinear else 1
-        self.down4 = DownDS(512, 1024 // factor, kernels_per_layer=kernels_per_layer)
-        self.cbam5 = CBAM(1024 // factor, reduction_ratio=reduction_ratio)
-        self.up1 = UpDS(1024, 512 // factor, self.bilinear, kernels_per_layer=kernels_per_layer)
-        self.up2 = UpDS(512, 256 // factor, self.bilinear, kernels_per_layer=kernels_per_layer)
-        self.up3 = UpDS(256, 128 // factor, self.bilinear, kernels_per_layer=kernels_per_layer)
-        self.up4 = UpDS(128, 64, self.bilinear, kernels_per_layer=kernels_per_layer)
+        self.down4 = DownDS(in_features*8, in_features*16 // factor, kernels_per_layer=kernels_per_layer)
+        self.cbam5 = CBAM(in_features*16 // factor, reduction_ratio=reduction_ratio)
+        self.up1 = UpDS(in_features*16, in_features*8 // factor, self.bilinear, kernels_per_layer=kernels_per_layer)
+        self.up2 = UpDS(in_features*8, in_features*4 // factor, self.bilinear, kernels_per_layer=kernels_per_layer)
+        self.up3 = UpDS(in_features*4, in_features*2 // factor, self.bilinear, kernels_per_layer=kernels_per_layer)
+        self.up4 = UpDS(in_features*2, in_features, self.bilinear, kernels_per_layer=kernels_per_layer)
 
-        self.outc = OutConv(64, self.n_classes)
+        self.outc = OutConv(in_features, self.n_classes)
 
     def forward(self, x):
         print('SmaAt_UNet input shape:', x.shape)
@@ -223,8 +225,9 @@ class SmaAt_UNet(nn.Module):
 if __name__ == '__main__':
     model = SmaAt_UNet(n_channels=5*6,
         n_classes=1,
+        in_features=32,
         kernels_per_layer=2,
-        bilinear=True,
+        bilinear=False,
         reduction_ratio=16).cuda()
 
     summary(model, input_size=(16, 5*6, 96, 192))

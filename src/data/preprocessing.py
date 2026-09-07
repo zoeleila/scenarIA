@@ -1,4 +1,5 @@
 import glob
+from importlib.metadata import files
 from pathlib import Path
 from scenarIA.src.utils.settings import DATASET_DIR, RAW_DATA_DIR
 import xesmf as xe
@@ -45,11 +46,16 @@ class Inputs:
     def build_dataset(self, original_time_format="%Y"):
         for simu, files in self.files_dict.items():
             ds = xr.open_dataset(files)
-            print(ds.time.values)
+            for var in ds.data_vars:
+                if 'lon' not in ds[var].dims:
+                    ds[var] = ds[var].expand_dims({'lon': ds.lon})
+                if 'lat' not in ds[var].dims:
+                    ds[var] = ds[var].expand_dims({'lat': ds.lat})
             ds = dataset_xr_formatting(ds, original_time_format, priority_dims=['time', 'lat', 'lon'])
-            print(ds.time.values)
-            return ds
-            #ds.to_netcdf(self.dataset_path / f'inputs_{simu}_regrid2.nc')
+
+            ds.to_netcdf(self.dataset_path / f'inputs_{simu}_regrid2.nc')
+            
+            
  
 
 # TODO : static fonction for var concatenation ? member concatenation, reggrid ?? not the same nb of member per simus
@@ -129,8 +135,12 @@ def build_inputs_dataset(rawdata_dir, simu, vars_list, dataset_dir, annual_mean=
     
 
 if __name__ == "__main__":
-    file = '/gpfs-calypso/scratch/globc/garcia/scenarIA/datasets/MPI-ESM1-2-LR/annual/inputs_ssp119_regrid2.nc'
-    input = Inputs(files_dict={'ssp119': file}, dataset_path=DATASET_DIR/'MPI-ESM1-2-LR/annual')
+    simus = ['historical', 'hist-aer', 'hist-GHG', 'hist-nat', 'ssp119', 'ssp126', 'ssp245', 'ssp370', 'ssp585']
+    files_dict = {}
+    for simu in simus:
+        file = np.sort(glob.glob(str(DATASET_DIR / f'MPI-ESM1-2-LR/annual/inputs_{simu}_regrid.nc')))[0]
+        files_dict[simu] = file
+    print(files_dict)
+    input = Inputs(files_dict=files_dict, dataset_path=DATASET_DIR/'MPI-ESM1-2-LR/annual')
     ds = input.build_dataset(original_time_format="%Y")
-    ds.to_netcdf(DATASET_DIR/'MPI-ESM1-2-LR/annual'/'inputs_ssp119_regrid3.nc')
     

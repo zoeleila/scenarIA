@@ -1,11 +1,13 @@
 import numpy as np
 from sklearn.linear_model import LinearRegression
 import yaml
+import matplotlib.pyplot as plt
+import argparse
+
 
 from scenarIA.src.utils.datautils import weighted_global_mean
 from scenarIA.src.data.dataloader import get_dataset, get_dataloaders
-from scenarIA.src.utils.settings import CONFIG_DIR, DATASET_DIR
-from tests import test
+from scenarIA.src.utils.settings import CONFIG_DIR, DATASET_DIR, RUNS_DIR
 
 class PatternScaling(object):
     """
@@ -71,17 +73,30 @@ class PatternScaling(object):
 
         return preds
     
+def prepare_dataset_for_global_fit(data):
+    data_global = np.stack([weighted_global_mean(data[..., i], lats=lat) for i in range(data.shape[-1])], 
+                           axis=0).transpose()
+    return data_global
 
 if __name__ == "__main__":
+    argparser = argparse.ArgumentParser(description="Compare different runs")
+    argparser.add_argument("--var_name", type=str, default='pr')
+    args = argparser.parse_args()
     
     with open(CONFIG_DIR / 'config.yaml') as file:
         config = yaml.safe_load(file)
     
     config['data']['seq_length'] = 1
+    config['data']['add_clim_to_predictors'] = False
     lat = dict(np.load(DATASET_DIR / config['data']['dataset_path'] / 'coords.npz', allow_pickle=True))['lat']
     lon = dict(np.load(DATASET_DIR / config['data']['dataset_path'] / 'coords.npz', allow_pickle=True))['lon']
     
-    # Train
+    # carefull to train for the 10 seeds
+
+    # Fit global emissions to global tas
+    config['train']['inputs'] = ['CO2']
+    config['train']['outputs'] = ['tas']
+
     train_dataloader = get_dataloaders(config=config, data_type='train', transforms=True)
     train_in = []
     train_out = []
@@ -89,20 +104,10 @@ if __name__ == "__main__":
         x, y, _, _ = batch
         train_in.append(x)
         train_out.append(y)
-    train_out = np.concatenate(train_out, axis=0).squeeze() # shape (n, n_lat, n_lon, channels)
-    train_out = np.expand_dims(train_out, axis=-1) # shape (n, n_lat, n_lon, channels=1)
-    print("train_out shape before transpose:", train_out.shape)
-    train_in = np.concatenate(train_in, axis=0).squeeze() # shape (n, n_lat, n_lon)
-
-    # data shuffle ??
-    print("train_in shape:", train_in.shape)
-    print("train_out shape:", train_out.shape)
-
-    # Fit global to global
-    train_in_global = np.stack([weighted_global_mean(train_in[..., i], lats=lat) for i in range(train_in.shape[-1])], 
-                               axis=0).transpose() # n, channels
-    train_out_global = np.stack([weighted_global_mean(train_out[..., i], lats=lat) for i in range(train_out.shape[-1])], 
-                                axis=0).transpose()
+    train_in = np.concatenate(train_in, axis=0).squeeze(1) # remove time=1 dimension shape (n, n_lat, n_lon, channels)
+    train_out = np.concatenate(train_out, axis=0).squeeze(1)[..., np.newaxis] # remove time=1 dimension shape (n, n_lat, n_lon, channels)
+    train_in_global = prepare_dataset_for_global_fit(train_in)
+    train_out_global = prepare_dataset_for_global_fit(train_out)
     print("train_in_global shape:", train_in_global.shape)
     print("train_out_global shape:", train_out_global.shape)
     
@@ -110,4 +115,48 @@ if __name__ == "__main__":
     linear.fit(train_in_global,
                train_out_global)
     
-    # to predi but shuffle feels weird
+
+    test_dataloader = get_dataloaders(config=config, data_type='test', transforms=True)
+
+    # to predict but shuffle feels weird
+    test_in = []
+    test_out = []
+    for batch in test_dataloader:
+        x, y, _, _ = batch
+        test_in.append(x)
+        test_out.append(y)
+    test_in = np.concatenate(test_in, axis=0).squeeze(1) # remove time=1 dimension shape (n, n_lat, n_lon, channels)
+    test_out = np.concatenate(test_out, axis=0).squeeze(1)[..., np.newaxis] # remove time=1 dimension shape (n, n_lat, n_lon, channels)
+    test_in_global = prepare_dataset_for_global_fit(test_in)
+    test_out_global = prepare_dataset_for_global_fit(test_out)
+    print("test_in_global shape:", test_in_global.shape)
+    
+    pred_out_global = linear.predict(test_in_global)
+    print("y_hat shape:", pred_out_global.shape)
+    print("test_out_global shape:", test_out_global.shape)
+
+    plt.figure()
+    plt.plot(pred_out_global, label='Predictions')
+    plt.plot(test_out_global, label='True Values')
+    plt.xlabel('Time')
+    plt.ylabel('Temperature Anomalies (°C)')
+    plt.title('Predictions vs True Values')
+    plt.legend()
+    plt.savefig('/gpfs-calypso/scratch/globc/garcia/scenarIA/graphs/test.png')
+
+    # Fit global tas to local var
+
+    if args.var_name == 'tas':
+        train_out_local = train_out
+        test_out_local = test_out
+    else:
+        config['train']['outputs'] = [args.var_name]
+        train_dataloader_var = get_dataloaders(config=config, data_type='train', transforms=True)
+        train_out_var = []
+        for batch in train_dataloader_var:
+            _, y, _, _ = batch
+            train_out_var.append(y)
+        train_out_var = np.concatenate(train_out, axis=0).squeeze(1)[..., np.newaxis]
+
+
+
