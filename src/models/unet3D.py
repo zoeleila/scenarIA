@@ -7,7 +7,7 @@ Author: Amir Aghdam
 """
 
 from torch import nn
-from torchsummary import summary
+from torchinfo import summary
 import torch
 import time
 
@@ -131,7 +131,5 @@ class UNet3D(nn.Module):
 
 if __name__ == '__main__':
     #Configurations according to the Xenopus kidney dataset
-    model = UNet3D(in_channels=3, num_classes=1)
-    start_time = time.time()
-    summary(model=model, input_size=(3, 16, 128, 128), batch_size=-1, device="cpu")
-    print("--- %s seconds ---" % (time.time() - start_time))
+    model = UNet3D(in_channels=6, num_classes=1, level_channels=[64, 128, 256], bottleneck_channel=512)
+    summary(model=model, input_size=(16, 6, 5, 128, 128), device="cpu")

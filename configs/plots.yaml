@@ -30,7 +30,7 @@ pr:
   longname: Precipitation
   unit: mm/day
   lim:
-    values: [-2, 2] 
+    values: [-2.4, 2.4] 
     rmse: [0., 0.8]
     mae: [0, 2.5]
     temporal_correlation: [-1, 1]

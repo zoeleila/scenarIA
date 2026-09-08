@@ -18,7 +18,7 @@ data:
 train: # for training
   val_size: 0.2 # in case simus_val is None
   seed: 42
-  arch: 'attention-unet'
+  arch: 'time-unet'
   learning_rate: 0.00005
   max_epochs: 100
   batch_size: 4
@@ -36,5 +36,5 @@ train: # for training
   monitor_metric: 'val_nrmse' # for best checkpointing and hyperparameter optimization
   early_stopping: 20
   encoder: 'vgg11'
-  unet_features: 64
+  unet_features: 32
   links: 5

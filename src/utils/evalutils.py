@@ -142,7 +142,7 @@ class EvaluationPlots():
             cmap = cmap_dict[metric_name]
             if self.config_plots and no_limits is False:
                 lim = self.config_plots['lim'][metric_name]
-                levels = np.linspace(lim[0], lim[1], 8)
+                levels = np.linspace(lim[0], lim[1], 11) if cmap == 'coolwarm' else np.linspace(lim[0], lim[1], 10)
             else: 
                 lim = [None, None]
                 levels=None

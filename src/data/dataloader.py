@@ -279,6 +279,7 @@ def get_climatology(config, climatology_simu: str='piControl', period=['1850-01-
 
 def get_dataset(config, data_type: str = 'train', transforms: bool = True):
     seed = config['train']['seed']
+    torch.manual_seed(seed)
     if transforms:
         runs_dir = RUNS_DIR / config['train']['runs_dir']
         statistic_file =  runs_dir / 'statistics.json' # only data settings
@@ -326,7 +327,6 @@ def get_dataloaders(data_type: str, config:dict, transforms:bool=True) -> DataLo
     else : 
         batch_size = 1
         shuffle = False
-
     dataloader = DataLoader(dataset, 
                             batch_size=batch_size, 
                             shuffle=shuffle, # reshuffle at every epoch

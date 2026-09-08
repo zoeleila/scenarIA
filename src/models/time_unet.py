@@ -55,8 +55,8 @@ class time_UNet(nn.Module):
 
     def __init__(
         self,
-        in_var_ids: List[str],
-        out_var_ids: List[str],
+        num_input_vars: int,
+        num_output_vars: int,
         longitude: int = 32,
         latitude: int = 32,
         activation_function: Union[
@@ -88,8 +88,8 @@ class time_UNet(nn.Module):
             self.lat = latitude
             self.channels_last = channels_last
             self.seq_len = seq_len
-        self.num_output_vars = len(out_var_ids)
-        self.num_input_vars = len(in_var_ids)
+        self.num_output_vars = num_output_vars
+        self.num_input_vars = num_input_vars
 
         # determine padding -> lan and lot must be divisible by 32
         pad_lon = int((np.ceil(self.lon / 32) * 32) - (self.lon / 32) * 32)

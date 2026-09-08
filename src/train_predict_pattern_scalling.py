@@ -1,13 +1,23 @@
+'''
+Inspired by https://github.com/blutjens/climate-emulator/blob/public/emcli2/models/pattern_scaling/model.py
+'''
+
+import xarray as xr
 import numpy as np
 from sklearn.linear_model import LinearRegression
 import yaml
 import matplotlib.pyplot as plt
 import argparse
+import pandas as pd
+import torch
+from datetime import datetime
 
 
+from scenarIA.src.utils.evalutils import EvaluationPlots
 from scenarIA.src.utils.datautils import weighted_global_mean
-from scenarIA.src.data.dataloader import get_dataset, get_dataloaders
-from scenarIA.src.utils.settings import CONFIG_DIR, DATASET_DIR, RUNS_DIR
+from scenarIA.src.data.dataloader import get_dataset, get_dataloaders, get_climatology
+from scenarIA.src.utils.datautils import standardize_units
+from scenarIA.src.utils.settings import CONFIG_DIR, DATASET_DIR, PREDICTIONS_DIR, RUNS_DIR
 
 class PatternScaling(object):
     """
@@ -80,11 +90,17 @@ def prepare_dataset_for_global_fit(data):
 
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser(description="Compare different runs")
-    argparser.add_argument("--var_name", type=str, default='pr')
+    argparser.add_argument("--var_name", type=str, default='tas')
+    argparser.add_argument("--simu_to_predict", type=str, default='ssp245')
     args = argparser.parse_args()
-    
+    var_name = args.var_name
+    simu_test = args.simu_to_predict
+
     with open(CONFIG_DIR / 'config.yaml') as file:
         config = yaml.safe_load(file)
+
+    with open(CONFIG_DIR / 'plots.yaml') as file:
+        config_plots = yaml.safe_load(file)
     
     config['data']['seq_length'] = 1
     config['data']['add_clim_to_predictors'] = False
@@ -121,10 +137,15 @@ if __name__ == "__main__":
     # to predict but shuffle feels weird
     test_in = []
     test_out = []
+    t_all = []
     for batch in test_dataloader:
-        x, y, _, _ = batch
+        x, y, t, _ = batch
         test_in.append(x)
         test_out.append(y)
+        t_all.append(t)
+    t_all = torch.cat(t_all, dim=0).numpy()
+    t_all = np.array([np.datetime64(datetime(year, month, day)) for year, month, day, *_ in t_all])
+    t_all = pd.to_datetime(t_all, format="%Y-%m-%d")
     test_in = np.concatenate(test_in, axis=0).squeeze(1) # remove time=1 dimension shape (n, n_lat, n_lon, channels)
     test_out = np.concatenate(test_out, axis=0).squeeze(1)[..., np.newaxis] # remove time=1 dimension shape (n, n_lat, n_lon, channels)
     test_in_global = prepare_dataset_for_global_fit(test_in)
@@ -136,27 +157,79 @@ if __name__ == "__main__":
     print("test_out_global shape:", test_out_global.shape)
 
     plt.figure()
-    plt.plot(pred_out_global, label='Predictions')
-    plt.plot(test_out_global, label='True Values')
+    plt.plot(pred_out_global, label='Linear Regression', color='royalblue')
+    plt.plot(test_out_global, label='True', color='k')
     plt.xlabel('Time')
     plt.ylabel('Temperature Anomalies (°C)')
-    plt.title('Predictions vs True Values')
+    plt.title(f'Predictions vs True Values ({simu_test})')
     plt.legend()
     plt.savefig('/gpfs-calypso/scratch/globc/garcia/scenarIA/graphs/test.png')
 
-    # Fit global tas to local var
-
-    if args.var_name == 'tas':
-        train_out_local = train_out
-        test_out_local = test_out
+    # Fit global tas to local var (univariate)
+    if var_name == 'tas':
+        train_out_local = train_out.squeeze()
+        test_out_local = test_out.squeeze()
     else:
-        config['train']['outputs'] = [args.var_name]
+        config['train']['outputs'] = [var_name]
         train_dataloader_var = get_dataloaders(config=config, data_type='train', transforms=True)
         train_out_var = []
         for batch in train_dataloader_var:
             _, y, _, _ = batch
             train_out_var.append(y)
-        train_out_var = np.concatenate(train_out, axis=0).squeeze(1)[..., np.newaxis]
+        train_out_local = np.concatenate(train_out_var, axis=0).squeeze() # (n, lat, lon) 1 var
 
+        test_dataloader_var = get_dataloaders(config=config, data_type='test', transforms=True)
+        test_out_var = []
+        for batch in test_dataloader_var:
+            _, y, _, _ = batch
+            test_out_var.append(y)
+        test_out_local = np.concatenate(test_out_var, axis=0).squeeze() # (n, lat, lon) 1 var
+      
+    print(train_out_global.shape, train_out_local.shape)
+    print(test_out_global.shape, test_out_local.shape)
 
+    ps = PatternScaling(deg=1)
+    ps.train(train_out_global.squeeze(), train_out_local)
 
+    print(pred_out_global.shape)
+    pred_out_local = ps.predict(pred_out_global.squeeze()).squeeze()
+    print(pred_out_local.shape)
+
+    plt.figure()
+    plt.plot(weighted_global_mean(pred_out_local, lats=lat), label='Pattern scaling', color='royalblue')
+    plt.plot(weighted_global_mean(test_out_local, lats=lat), label='True', color='k')
+    plt.xlabel('Time')
+    plt.ylabel(f'{var_name} Anomalies')
+    plt.title(f'Predictions vs True Values ({simu_test})')
+    plt.legend()
+    plt.savefig('/gpfs-calypso/scratch/globc/garcia/scenarIA/graphs/test2.png')
+
+    eval = EvaluationPlots(simulation_name=simu_test,
+                 var_name=var_name,
+                 config_plots=config_plots)
+    
+    eval.plot_error_maps(y_true= test_out_local[-21:,:,:],
+                        y_pred=pred_out_local[-21:,:,:],
+                        title='pattern-scaling',
+                        save_path='/gpfs-calypso/scratch/globc/garcia/scenarIA/graphs/test3.png',
+                        no_limits=False)
+
+    climatology = get_climatology(config)
+    pred_out_local = pred_out_local + climatology.squeeze() # à modifier quand multivarié
+    
+    ds = xr.Dataset(
+        data_vars={
+            var_name: (('run', 'time', 'lat', 'lon'), pred_out_local[np.newaxis,...])
+        },
+        coords={
+            'run': [42],
+            'time': t_all,
+            'lat': lat,
+            'lon': lon
+        }
+    )
+    # add units
+    ds = standardize_units(ds)
+    print(ds)
+    ds.to_netcdf(
+        PREDICTIONS_DIR / f'MPI-ESM1-2-LR/annual/exp9/MPI-ESM1-2-LR_annual_exp9_{simu_test}_{var_name}_pattern-scaling_seq1_mem30.nc')

@@ -49,7 +49,7 @@ class scenarIALightningModule(pl.LightningModule):
         self.outputs = config['train']['outputs']
         inputs = config['train']['inputs']
         self.inputs = inputs[:-1] if 'climatology' in inputs else inputs # for a specific run ...
-        self.add_clim_to_predictors = config['data'].get('add_clim_to_predictors', False)
+        self.add_clim_to_predictors = bool(config['data'].get('add_clim_to_predictors', False))
         if self.add_clim_to_predictors:
             self.inputs_len = len(self.inputs) + 1
         else:
@@ -126,8 +126,8 @@ class scenarIALightningModule(pl.LightningModule):
                                   init_features=self.unet_features).float()
             case 'time-unet':
                 self.model = time_UNet(
-                    in_var_ids=self.inputs.append('climatology') if self.add_clim_to_predictors else self.inputs,
-                    out_var_ids=self.outputs,
+                    num_input_vars=self.inputs_len,
+                    num_output_vars=len(self.outputs),
                     longitude=self.img_size[1],
                     latitude=self.img_size[0],
                     activation_function=None,
