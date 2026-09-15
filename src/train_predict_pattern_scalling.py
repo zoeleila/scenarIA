@@ -17,7 +17,7 @@ from scenarIA.src.utils.evalutils import EvaluationPlots
 from scenarIA.src.utils.datautils import weighted_global_mean
 from scenarIA.src.data.dataloader import get_dataset, get_dataloaders, get_climatology
 from scenarIA.src.utils.datautils import standardize_units
-from scenarIA.src.utils.settings import CONFIG_DIR, DATASET_DIR, PREDICTIONS_DIR, RUNS_DIR
+from scenarIA.src.utils.settings import CONFIG_DIR, DATASET_DIR, PREDICTIONS_DIR, RUNS_DIR, GRAPHS_DIR
 
 class PatternScaling(object):
     """
@@ -113,7 +113,7 @@ if __name__ == "__main__":
     config['train']['inputs'] = ['CO2']
     config['train']['outputs'] = ['tas']
 
-    train_dataloader = get_dataloaders(config=config, data_type='train', transforms=True)
+    train_dataloader = get_dataloaders(config=config, data_type='train', transforms=False)
     train_in = []
     train_out = []
     for batch in train_dataloader:
@@ -132,7 +132,7 @@ if __name__ == "__main__":
                train_out_global)
     
 
-    test_dataloader = get_dataloaders(config=config, data_type='test', transforms=True)
+    test_dataloader = get_dataloaders(config=config, data_type='test', transforms=False)
 
     # to predict but shuffle feels weird
     test_in = []
@@ -163,7 +163,7 @@ if __name__ == "__main__":
     plt.ylabel('Temperature Anomalies (°C)')
     plt.title(f'Predictions vs True Values ({simu_test})')
     plt.legend()
-    plt.savefig('/gpfs-calypso/scratch/globc/garcia/scenarIA/graphs/test.png')
+    plt.savefig(GRAPHS_DIR/ 'runs/MPI-ESM1-2-LR/annual/exp9/global_forcings_to_global_tas_pattern_scaling.png')
 
     # Fit global tas to local var (univariate)
     if var_name == 'tas':
@@ -171,14 +171,14 @@ if __name__ == "__main__":
         test_out_local = test_out.squeeze()
     else:
         config['train']['outputs'] = [var_name]
-        train_dataloader_var = get_dataloaders(config=config, data_type='train', transforms=True)
+        train_dataloader_var = get_dataloaders(config=config, data_type='train', transforms=False)
         train_out_var = []
         for batch in train_dataloader_var:
             _, y, _, _ = batch
             train_out_var.append(y)
         train_out_local = np.concatenate(train_out_var, axis=0).squeeze() # (n, lat, lon) 1 var
 
-        test_dataloader_var = get_dataloaders(config=config, data_type='test', transforms=True)
+        test_dataloader_var = get_dataloaders(config=config, data_type='test', transforms=False)
         test_out_var = []
         for batch in test_dataloader_var:
             _, y, _, _ = batch
@@ -202,20 +202,9 @@ if __name__ == "__main__":
     plt.ylabel(f'{var_name} Anomalies')
     plt.title(f'Predictions vs True Values ({simu_test})')
     plt.legend()
-    plt.savefig('/gpfs-calypso/scratch/globc/garcia/scenarIA/graphs/test2.png')
+    plt.savefig(GRAPHS_DIR/ f'runs/MPI-ESM1-2-LR/annual/exp9/global_tas_to_local_{var_name}_pattern_scaling.png')
 
-    eval = EvaluationPlots(simulation_name=simu_test,
-                 var_name=var_name,
-                 config_plots=config_plots)
-    
-    eval.plot_error_maps(y_true= test_out_local[-21:,:,:],
-                        y_pred=pred_out_local[-21:,:,:],
-                        title='pattern-scaling',
-                        save_path='/gpfs-calypso/scratch/globc/garcia/scenarIA/graphs/test3.png',
-                        no_limits=False)
-
-    climatology = get_climatology(config)
-    pred_out_local = pred_out_local + climatology.squeeze() # à modifier quand multivarié
+    pred_out_local = pred_out_local
     
     ds = xr.Dataset(
         data_vars={

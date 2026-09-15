@@ -88,6 +88,8 @@ class scenarIALightningModule(pl.LightningModule):
         self.val_outputs_per_simu = {} 
         self.valid_across_all_simus = True if self.simus_val is None else False
         self.monitor_metric = config['train'].get('monitor_metric', 'val_rmse') # for best checkpointing and hyperparameter optimization
+        self.alpha = config['train'].get('alpha', 5)
+        print('alpha config', self.alpha)
 
         self.get_model()
         self.time_per_epoch = []
@@ -249,7 +251,7 @@ class scenarIALightningModule(pl.LightningModule):
                 y_all = torch.cat(outputs['true'], dim=0).view(-1, self.img_size[0], self.img_size[1])
                 y_hat_all = torch.cat(outputs['hat'], dim=0).view(-1, self.img_size[0], self.img_size[1])
                 print('coucou', y_hat_all.shape, y_all.shape)
-                nrmse_s = NRMSE_ClimateBench(y_hat_all, y_all, self.lats.cpu())
+                nrmse_s = NRMSE_ClimateBench(y_hat_all, y_all, self.lats.cpu(), alpha=self.alpha)
                 nrmse_g_s = NRMSE_g_ClimateBench(y_hat_all, y_all, self.lats.cpu())
                 nrmse_s_s = NRMSE_s_ClimateBench(y_hat_all, y_all, self.lats.cpu())
                 nrmse_per_simu[simu_name] = nrmse_s

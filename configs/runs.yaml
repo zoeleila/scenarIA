@@ -13,14 +13,18 @@ compare:
 
 predict:
 
-  'clim_0_00005':
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed42_seq5_mem30/lightning_logs/version_40
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed43_seq5_mem30/lightning_logs/version_19
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed44_seq5_mem30/lightning_logs/version_18
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed45_seq5_mem30/lightning_logs/version_11
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed46_seq5_mem30/lightning_logs/version_11
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed47_seq5_mem30/lightning_logs/version_11
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed48_seq5_mem30/lightning_logs/version_11
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed49_seq5_mem30/lightning_logs/version_11
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed50_seq5_mem30/lightning_logs/version_11
-    - MPI-ESM1-2-LR/annual/exp9/pr_unet_seed51_seq5_mem30/lightning_logs/version_11
+
+  'clim':
+    - MPI-ESM1-2-LR/annual/exp9/pr_cnn-gru_seed42_seq5_mem30/lightning_logs/version_13
+    - MPI-ESM1-2-LR/annual/exp9/pr_cnn-gru_seed43_seq5_mem30/lightning_logs/version_2
+    - MPI-ESM1-2-LR/annual/exp9/pr_cnn-gru_seed44_seq5_mem30/lightning_logs/version_2
+    - MPI-ESM1-2-LR/annual/exp9/pr_cnn-gru_seed45_seq5_mem30/lightning_logs/version_2
+    - MPI-ESM1-2-LR/annual/exp9/pr_cnn-gru_seed46_seq5_mem30/lightning_logs/version_2
+    - MPI-ESM1-2-LR/annual/exp9/pr_cnn-gru_seed47_seq5_mem30/lightning_logs/version_2
+    - MPI-ESM1-2-LR/annual/exp9/pr_cnn-gru_seed48_seq5_mem30/lightning_logs/version_2
+    - MPI-ESM1-2-LR/annual/exp9/pr_cnn-gru_seed49_seq5_mem30/lightning_logs/version_2
+    - MPI-ESM1-2-LR/annual/exp9/pr_cnn-gru_seed50_seq5_mem30/lightning_logs/version_2
+    - MPI-ESM1-2-LR/annual/exp9/pr_cnn-gru_seed51_seq5_mem30/lightning_logs/version_2
+
+
+

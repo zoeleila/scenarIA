@@ -11,20 +11,20 @@ data:
   add_clim_to_predictors: True
   predict_only_last_timestep: True
   timescale: 'annual'
-  seq_length: 5
+  seq_length: 10
   moving_window: 1
 
 
 train: # for training
   val_size: 0.2 # in case simus_val is None
   seed: 42
-  arch: 'time-unet'
-  learning_rate: 0.00005
+  arch: 'convlstm'
+  learning_rate: 0.001
   max_epochs: 100
   batch_size: 4
   runs_dir: 'MPI-ESM1-2-LR/annual/exp9/'
   inputs: ['CO2', 'SO2', 'CH4', 'BC', 'tau']
-  outputs: ['pr']
+  outputs: ['tas'] # carefull seq_length
   simus_train: ['historical', 'hist-nat', 'hist-aer', 'hist-GHG', 'ssp119', 'ssp126', 'ssp585']
   simus_val: ['ssp370']
   simus_test: ['ssp245']
@@ -32,9 +32,10 @@ train: # for training
   img_size: [96, 192]
   scheduler_step_size: 50
   scheduler_gamma: 0.1
-  lstm_units: 64
+  lstm_units: [64, 64]
   monitor_metric: 'val_nrmse' # for best checkpointing and hyperparameter optimization
+  alpha: 5
   early_stopping: 20
   encoder: 'vgg11'
-  unet_features: 32
+  unet_features: 64
   links: 5

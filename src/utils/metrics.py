@@ -74,6 +74,7 @@ def NRMSE_ClimateBench(y_hat: torch.Tensor, y: torch.Tensor, lats: torch.Tensor,
     nrmseg = NRMSE_g_ClimateBench(y_hat, y, lats, normalize=True, weights_normalization='sum')
     nrmses = NRMSE_s_ClimateBench(y_hat, y, lats, normalize=True, weights_normalization='sum')
     nrmse = nrmses + alpha * nrmseg
+    print('alphaaa metric', alpha)
 
     return nrmse
 

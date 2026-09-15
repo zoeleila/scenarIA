@@ -341,7 +341,7 @@ def _time_corr_map(y_true, y_pred):
 def compare_metrics_maps(y, y_hat_dict, var_name, title=None, save_dir=None,
                           config_plots=None, projection=ccrs.Robinson(),
                           transform=ccrs.PlateCarree(), domain=[0., 360., -90., 90.],
-                          unit='', no_limits=False, figsize=None,
+                          unit='', no_limits=False, climatology=None, relative_changes=False, figsize=None,
                           orientation='horizontal'):
     """
     y (time, lat, lon)
@@ -370,6 +370,11 @@ def compare_metrics_maps(y, y_hat_dict, var_name, title=None, save_dir=None,
     }
 
     y_time_mean = y.mean(axis=0)
+    if climatology is not None:
+        if relative_changes:
+            y_time_mean = (y_time_mean - climatology)/ climatology * 100
+        else:
+            y_time_mean = y_time_mean - climatology
 
     # -- pré-calcul des cartes pour chaque test --
     test_data = {}
@@ -377,6 +382,11 @@ def compare_metrics_maps(y, y_hat_dict, var_name, title=None, save_dir=None,
         if isinstance(y_hat, list):
             y_hat = np.stack(y_hat, axis=0)
         runs_time_mean = y_hat.mean(axis=1)
+        if climatology is not None:
+            if relative_changes:
+                runs_time_mean = (runs_time_mean - climatology[np.newaxis,:,:])/ climatology[np.newaxis,:,:] * 100
+            else:
+                runs_time_mean = runs_time_mean - climatology
         sim_mean = runs_time_mean.mean(axis=0)
         sim_std = runs_time_mean.std(axis=0)
         mean_error = (runs_time_mean - y_time_mean[None, ...]).mean(axis=0)
@@ -406,6 +416,7 @@ def compare_metrics_maps(y, y_hat_dict, var_name, title=None, save_dir=None,
             levels = np.linspace(lim[0], lim[1], n_levels)
         else:
             levels = None
+        print(levels)
         cs = ax.contourf(data, cmap=cmap, levels=levels, extent=domain,
                           transform=transform, extend='both')
         ax.add_feature(cfeature.COASTLINE, linewidth=0.8, alpha=0.7)
@@ -588,6 +599,7 @@ def compare_metrics(y, y_hat_dict, var_name, lats=None, title=None, save_dir=Non
         - 'scores_of_bootstrap_mean' : bootstrap sur la moyenne des membres (comportement actuel)
         - 'mean_of_scores' : calcule le score de chaque membre individuellement, 
                              retourne moyenne + IC 95% inter-membres
+        - 'scores_of_mean'
     '''
     lats = np.linspace(-90, 90, y.shape[-2]) if lats is None else lats
 
@@ -623,6 +635,9 @@ def compare_metrics(y, y_hat_dict, var_name, lats=None, title=None, save_dir=Non
                 # Nouveau cas : score de chaque membre individuellement
                 for metric, fn in metric_fns.items():
                     metric_dict[metric][test] = [fn(y_hat_stack[i]) for i in range(y_hat_stack.shape[0])]
+                
+            #elif ensemble_scoring == 'scores_of_mean':
+
 
         else:
             # Cas single member : inchangé
@@ -662,6 +677,8 @@ def compare_metrics(y, y_hat_dict, var_name, lats=None, title=None, save_dir=Non
         plt.ylabel(f'{var_name} {metric}')
         if metric.endswith('Corr'):
             plt.ylim(0.9, 1)
+        if metric.endswith('NRMSE'):
+            plt.ylim(0, 3)
         if save_dir:
             plt.savefig(save_dir / f'{title}_{metric}_bar_plot_{var_name}_{ensemble_scoring}.png' if is_list
                         else save_dir / f'{title}_{metric}_bar_plot_{var_name}.png')

@@ -26,6 +26,7 @@ def run(config):
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
+    torch.use_deterministic_algorithms(True)
 
     # Data
     train_dataloader = get_dataloaders('train', config)

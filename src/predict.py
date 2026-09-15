@@ -89,6 +89,7 @@ def save_predictions_as_netcdf(runs_to_predict, data_type='test', simus_to_predi
     # add units
     ds = standardize_units(ds)
     print(ds)
+    print(test_name)
     model_name = hparams['data']['model_name']
     timescale = hparams['data']['timescale']
     exp = hparams['data']['exp']
@@ -108,7 +109,7 @@ if __name__=='__main__':
     with open(CONFIG_DIR / 'runs.yaml') as file:
         runs = yaml.safe_load(file)
     runs_to_predict_dict = runs['predict']
-    for exp_name in runs_to_predict_dict.keys():
+    for exp_name in runs_to_predict_dict.keys(): # !! Same keys ...
         runs_to_predict = runs_to_predict_dict[exp_name]
         save_predictions_as_netcdf(runs_to_predict, 
                                data_type='test', 

@@ -59,7 +59,6 @@ class scenarIA(Dataset):
         if data_type == 'test' or data_type == 'inference': # TODO concat historical
             self.one_to_many = False
 
-        print('1111', valid_across_all_simus, self.simus)
         self.load_inputs()
         if self.data_type == 'inference':
             self.outputs = None
@@ -95,8 +94,6 @@ class scenarIA(Dataset):
         
         print('final inputs shape shuffle', self.inputs.shape)
         print('final outputs shape shuffle', self.outputs.shape if self.outputs is not None else None)
-        print('time length shuffle', len(self.time), self.time[0])
-        print('simus length shuffle', len(self.simus_all), self.simus_all[0] if self.simus_all else None)
 
     def load_inputs(self):
         """

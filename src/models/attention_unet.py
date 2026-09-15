@@ -4,9 +4,9 @@ https://github.com/sfczekalski/attention_unet/blob/master/model.py
 Attention U-Net: Learning Where to Look for the Pancreas
 '''
 
-from re import A
 import torch
 import torch.nn as nn
+
 
 class ConvBlock(nn.Module):
 
