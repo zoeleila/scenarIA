@@ -677,8 +677,7 @@ def compare_metrics(y, y_hat_dict, var_name, lats=None, title=None, save_dir=Non
         plt.ylabel(f'{var_name} {metric}')
         if metric.endswith('Corr'):
             plt.ylim(0.9, 1)
-        if metric.endswith('NRMSE'):
-            plt.ylim(0, 3)
+
         if save_dir:
             plt.savefig(save_dir / f'{title}_{metric}_bar_plot_{var_name}_{ensemble_scoring}.png' if is_list
                         else save_dir / f'{title}_{metric}_bar_plot_{var_name}.png')

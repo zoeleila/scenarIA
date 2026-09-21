@@ -32,10 +32,11 @@ def predict(run_dir,
     dataloader = get_dataloaders(data_type, config=hparams)
     y_hat_all = []
     y_all = None if data_type == 'inference' else []
-    t_all = None if data_type == 'inference' else []
+    t_all = []
     for batch in tqdm(dataloader, desc="Computing stats from dataloader", disable=True):
         if data_type == 'inference':
-            x, _, _, _ = batch
+            x, t, _ = batch
+            t_all.append(t)
         else:
             x, y, t, _ = batch
             y_all.append(y)
@@ -45,13 +46,14 @@ def predict(run_dir,
             y_hat = model(x).cpu()
         y_hat_all.append(y_hat)
     y_hat_all = torch.stack(y_hat_all, axis=0).view(-1, hparams['train']['img_size'][0], hparams['train']['img_size'][1]).numpy()
+    t_all = torch.cat(t_all, dim=0).numpy()
+    t_all = np.array([np.datetime64(datetime(year, month, day)) for year, month, day, *_ in t_all])
+    t_all = pd.to_datetime(t_all, format="%Y-%m-%d")
     if data_type == 'inference':
-        return y_hat_all, None, t_all, hparams
+        return y_hat_all, t_all, hparams
     else:
         y_all = torch.cat(y_all, dim=0).squeeze().numpy()
-        t_all = torch.cat(t_all, dim=0).numpy()
-        t_all = np.array([np.datetime64(datetime(year, month, day)) for year, month, day, *_ in t_all])
-        t_all = pd.to_datetime(t_all, format="%Y-%m-%d")
+        
         return y_hat_all, y_all, t_all, hparams
 
 def save_predictions_as_netcdf(runs_to_predict, data_type='test', simus_to_predict=None, best_checkpoint=True, exp_name=''):
@@ -59,8 +61,11 @@ def save_predictions_as_netcdf(runs_to_predict, data_type='test', simus_to_predi
     y_hat_all_list = []
     seed_list = []
     for run_dir in runs_to_predict:
-        y_hat_all, _, t_all, hparams = predict(run_dir, data_type=data_type, simus_to_predict=simus_to_predict, best_checkpoint=best_checkpoint)
-        simu_test = hparams['train']['simus_test'][0]
+        if data_type == 'inference':
+            y_hat_all, t_all, hparams = predict(run_dir, data_type=data_type, simus_to_predict=simus_to_predict, best_checkpoint=best_checkpoint)
+        else:
+            y_hat_all, _, t_all, hparams = predict(run_dir, data_type=data_type, simus_to_predict=simus_to_predict, best_checkpoint=best_checkpoint)
+        simu_test = hparams['train'][f'simus_{data_type}'][0]
         seed = hparams['train']['seed']
         output = hparams['train']['outputs'][0] # à modifier quand multivarié
         test_name = hparams['train']['test_name']
@@ -72,7 +77,7 @@ def save_predictions_as_netcdf(runs_to_predict, data_type='test', simus_to_predi
         y_hat_all_list.append(y_hat_all)
         seed_list.append(seed)
         
-        
+    print(simus_to_predict)    
 
     y_hat_all_array = np.stack(y_hat_all_list, axis=0)
     ds = xr.Dataset(
@@ -93,7 +98,6 @@ def save_predictions_as_netcdf(runs_to_predict, data_type='test', simus_to_predi
     model_name = hparams['data']['model_name']
     timescale = hparams['data']['timescale']
     exp = hparams['data']['exp']
-    simu_test = hparams['train']['simus_test'][0]
     max_epochs = hparams['train']['max_epochs']
     bs = hparams['train']['batch_size']
     filename = f'{model_name}_{timescale}_{exp}_{simu_test}_{test_name}_epoch{max_epochs}_bs{bs}_{exp_name}.nc'
@@ -104,6 +108,7 @@ def save_predictions_as_netcdf(runs_to_predict, data_type='test', simus_to_predi
 if __name__=='__main__':
     argparser = argparse.ArgumentParser(description="Compare different runs")
     argparser.add_argument("--simus_to_predict", type=str, default='ssp245')
+    argparser.add_argument("--data_type", type=str, default='test')
     args = argparser.parse_args()
 
     with open(CONFIG_DIR / 'runs.yaml') as file:
@@ -112,7 +117,7 @@ if __name__=='__main__':
     for exp_name in runs_to_predict_dict.keys(): # !! Same keys ...
         runs_to_predict = runs_to_predict_dict[exp_name]
         save_predictions_as_netcdf(runs_to_predict, 
-                               data_type='test', 
+                               data_type=args.data_type, 
                                simus_to_predict=args.simus_to_predict, 
                                best_checkpoint=True,
                                exp_name=exp_name)

@@ -2,6 +2,7 @@
 Inspired by https://github.com/blutjens/climate-emulator/blob/public/emcli2/models/pattern_scaling/model.py
 '''
 
+from cProfile import label
 import xarray as xr
 import numpy as np
 from sklearn.linear_model import LinearRegression
@@ -10,6 +11,8 @@ import matplotlib.pyplot as plt
 import argparse
 import pandas as pd
 import torch
+from matplotlib.lines import Line2D
+
 from datetime import datetime
 
 
@@ -17,7 +20,7 @@ from scenarIA.src.utils.evalutils import EvaluationPlots
 from scenarIA.src.utils.datautils import weighted_global_mean
 from scenarIA.src.data.dataloader import get_dataset, get_dataloaders, get_climatology
 from scenarIA.src.utils.datautils import standardize_units
-from scenarIA.src.utils.settings import CONFIG_DIR, DATASET_DIR, PREDICTIONS_DIR, RUNS_DIR, GRAPHS_DIR
+from scenarIA.src.utils.settings import CONFIG_DIR, DATASET_DIR, PREDICTIONS_DIR, RUNS_DIR, GRAPHS_DIR, SIMUS_COLORS_DICT
 
 class PatternScaling(object):
     """
@@ -92,9 +95,11 @@ if __name__ == "__main__":
     argparser = argparse.ArgumentParser(description="Compare different runs")
     argparser.add_argument("--var_name", type=str, default='tas')
     argparser.add_argument("--simu_to_predict", type=str, default='ssp245')
+    argparser.add_argument("--data_type", type=str, default='test')
     args = argparser.parse_args()
     var_name = args.var_name
     simu_test = args.simu_to_predict
+    data_type = args.data_type
 
     with open(CONFIG_DIR / 'config.yaml') as file:
         config = yaml.safe_load(file)
@@ -103,6 +108,8 @@ if __name__ == "__main__":
         config_plots = yaml.safe_load(file)
     
     config['data']['seq_length'] = 1
+    config['train']['batch_size'] = 1
+    config['train']['simus_train'] = ['historical', 'ssp119', 'ssp126', 'ssp585']
     config['data']['add_clim_to_predictors'] = False
     lat = dict(np.load(DATASET_DIR / config['data']['dataset_path'] / 'coords.npz', allow_pickle=True))['lat']
     lon = dict(np.load(DATASET_DIR / config['data']['dataset_path'] / 'coords.npz', allow_pickle=True))['lon']
@@ -116,10 +123,12 @@ if __name__ == "__main__":
     train_dataloader = get_dataloaders(config=config, data_type='train', transforms=False)
     train_in = []
     train_out = []
+    simus_all = []
     for batch in train_dataloader:
-        x, y, _, _ = batch
+        x, y, _, simu = batch
         train_in.append(x)
         train_out.append(y)
+        simus_all.append(simu[0])
     train_in = np.concatenate(train_in, axis=0).squeeze(1) # remove time=1 dimension shape (n, n_lat, n_lon, channels)
     train_out = np.concatenate(train_out, axis=0).squeeze(1)[..., np.newaxis] # remove time=1 dimension shape (n, n_lat, n_lon, channels)
     train_in_global = prepare_dataset_for_global_fit(train_in)
@@ -127,48 +136,90 @@ if __name__ == "__main__":
     print("train_in_global shape:", train_in_global.shape)
     print("train_out_global shape:", train_out_global.shape)
     
+
     linear = LinearRegression()
     linear.fit(train_in_global,
                train_out_global)
-    
+    a = np.ravel(linear.coef_)[0]          # pente
+    b = np.ravel(linear.intercept_)[0] 
+    r2 = linear.score(train_in_global.reshape(-1, 1), train_out_global)
+    x = np.linspace(train_in_global.min(), train_in_global.max(), 100).reshape(-1, 1)
+    y = linear.predict(x)
 
-    test_dataloader = get_dataloaders(config=config, data_type='test', transforms=False)
+    
+    fig, ax = plt.subplots()
+
+    colors = np.array([SIMUS_COLORS_DICT[s] for s in simus_all])   # une couleur par point
+
+    ax.scatter(train_in_global.squeeze(), 
+                train_out_global.squeeze(), 
+                c=colors)
+    ax.plot(x, y, color='black', linestyle='--', linewidth=2)
+
+
+    handles = [Line2D([], [], marker='o', linestyle='', color=SIMUS_COLORS_DICT[s], label=s)
+            for s in np.unique(simus_all)]
+    handles.append(Line2D([], [], color='black', linestyle='--',
+                      label=f'y = {a:.3g}·x + {b:.3g}'))
+    ax.text(0.05, 0.95, f'$R^2$ = {r2:.3f}',
+        transform=ax.transAxes,
+        ha='left', va='top',
+        fontsize=12,
+        bbox=dict(boxstyle='round', facecolor='white', edgecolor='gray', alpha=0.8))
+    ax.legend(handles=handles, loc='lower right')
+    ax.set_xlabel('Cumulative CO2 anthropique emissions')
+    ax.set_ylabel('Global mean temperature')
+    ax.set_title('Lutjens')
+    plt.savefig(GRAPHS_DIR/f'runs/MPI-ESM1-2-LR/annual/exp9/global_forcings_to_global_{simu_test}_tas_and_CO2_pattern_scaling_5simus.png')
+
+    
+    
+    config['train'][f'simus_{data_type}'] = [simu_test]
+    test_dataloader = get_dataloaders(config=config, data_type=data_type, transforms=False)
 
     # to predict but shuffle feels weird
     test_in = []
     test_out = []
     t_all = []
     for batch in test_dataloader:
-        x, y, t, _ = batch
+        if data_type == 'test':
+            x, y, t, _ = batch
+            test_out.append(y)
+        else:
+            x, t, _ = batch
         test_in.append(x)
-        test_out.append(y)
         t_all.append(t)
     t_all = torch.cat(t_all, dim=0).numpy()
     t_all = np.array([np.datetime64(datetime(year, month, day)) for year, month, day, *_ in t_all])
     t_all = pd.to_datetime(t_all, format="%Y-%m-%d")
     test_in = np.concatenate(test_in, axis=0).squeeze(1) # remove time=1 dimension shape (n, n_lat, n_lon, channels)
-    test_out = np.concatenate(test_out, axis=0).squeeze(1)[..., np.newaxis] # remove time=1 dimension shape (n, n_lat, n_lon, channels)
     test_in_global = prepare_dataset_for_global_fit(test_in)
-    test_out_global = prepare_dataset_for_global_fit(test_out)
-    print("test_in_global shape:", test_in_global.shape)
     
+
     pred_out_global = linear.predict(test_in_global)
     print("y_hat shape:", pred_out_global.shape)
-    print("test_out_global shape:", test_out_global.shape)
+    print("test_in_global shape:", test_in_global.shape)
+
+    
+    if data_type == 'test':
+        test_out = np.concatenate(test_out, axis=0).squeeze(1)[..., np.newaxis] # remove time=1 dimension shape (n, n_lat, n_lon, channels)
+        test_out_global = prepare_dataset_for_global_fit(test_out)
+        print("test_out_global shape:", test_out_global.shape)
 
     plt.figure()
     plt.plot(pred_out_global, label='Linear Regression', color='royalblue')
-    plt.plot(test_out_global, label='True', color='k')
+    if data_type == 'test':
+        plt.plot(test_out_global, label='True', color='k')
     plt.xlabel('Time')
     plt.ylabel('Temperature Anomalies (°C)')
-    plt.title(f'Predictions vs True Values ({simu_test})')
+    plt.title(f'Global mean Predictions ({simu_test})')
     plt.legend()
-    plt.savefig(GRAPHS_DIR/ 'runs/MPI-ESM1-2-LR/annual/exp9/global_forcings_to_global_tas_pattern_scaling.png')
+    plt.savefig(GRAPHS_DIR/ f'runs/MPI-ESM1-2-LR/annual/exp9/global_forcings_to_global_{simu_test}_tas_pattern_scaling_5simus.png')
 
     # Fit global tas to local var (univariate)
     if var_name == 'tas':
         train_out_local = train_out.squeeze()
-        test_out_local = test_out.squeeze()
+        test_out_local = test_out.squeeze() if data_type == 'test' else []
     else:
         config['train']['outputs'] = [var_name]
         train_dataloader_var = get_dataloaders(config=config, data_type='train', transforms=False)
@@ -178,31 +229,29 @@ if __name__ == "__main__":
             train_out_var.append(y)
         train_out_local = np.concatenate(train_out_var, axis=0).squeeze() # (n, lat, lon) 1 var
 
-        test_dataloader_var = get_dataloaders(config=config, data_type='test', transforms=False)
-        test_out_var = []
-        for batch in test_dataloader_var:
-            _, y, _, _ = batch
-            test_out_var.append(y)
-        test_out_local = np.concatenate(test_out_var, axis=0).squeeze() # (n, lat, lon) 1 var
+        if data_type == 'test':
+            test_dataloader_var = get_dataloaders(config=config, data_type='test', transforms=False)
+            test_out_var = []
+            for batch in test_dataloader_var:
+                _, y, _, _ = batch
+                test_out_var.append(y)
+            test_out_local = np.concatenate(test_out_var, axis=0).squeeze() # (n, lat, lon) 1 var
       
-    print(train_out_global.shape, train_out_local.shape)
-    print(test_out_global.shape, test_out_local.shape)
-
     ps = PatternScaling(deg=1)
     ps.train(train_out_global.squeeze(), train_out_local)
 
-    print(pred_out_global.shape)
     pred_out_local = ps.predict(pred_out_global.squeeze()).squeeze()
-    print(pred_out_local.shape)
 
     plt.figure()
     plt.plot(weighted_global_mean(pred_out_local, lats=lat), label='Pattern scaling', color='royalblue')
-    plt.plot(weighted_global_mean(test_out_local, lats=lat), label='True', color='k')
+    if data_type == 'test':
+        plt.plot(weighted_global_mean(test_out_local, lats=lat), label='True', color='k')
     plt.xlabel('Time')
     plt.ylabel(f'{var_name} Anomalies')
-    plt.title(f'Predictions vs True Values ({simu_test})')
+    plt.title(f'Global mean predictions ({simu_test})')
     plt.legend()
-    plt.savefig(GRAPHS_DIR/ f'runs/MPI-ESM1-2-LR/annual/exp9/global_tas_to_local_{var_name}_pattern_scaling.png')
+    plt.savefig(GRAPHS_DIR/ f'runs/MPI-ESM1-2-LR/annual/exp9/global_tas_to_local_{simu_test}_{var_name}_pattern_scaling_5simus.png')
+
 
     pred_out_local = pred_out_local
     
@@ -221,4 +270,4 @@ if __name__ == "__main__":
     ds = standardize_units(ds)
     print(ds)
     ds.to_netcdf(
-        PREDICTIONS_DIR / f'MPI-ESM1-2-LR/annual/exp9/MPI-ESM1-2-LR_annual_exp9_{simu_test}_{var_name}_pattern-scaling_seq1_mem30.nc')
+        PREDICTIONS_DIR / f'MPI-ESM1-2-LR/annual/exp9/MPI-ESM1-2-LR_annual_exp9_{simu_test}_{var_name}_pattern-scaling_seq1_mem30_5simus.nc')

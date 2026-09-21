@@ -107,7 +107,7 @@ class scenarIA(Dataset):
 
         for simu in self.simus:
             inputs_xr = xr.open_dataset(self.dataset_path / f'inputs_{simu}_regrid2.nc')[self.inputs_var_list]
-            if self.data_type == 'test' and self.seq_length > 1:
+            if (self.data_type == 'test') and self.seq_length > 1: # supposing only future scenarios test
                 hist_xr = xr.open_dataset(
                     self.dataset_path / f'inputs_historical_regrid2.nc')[self.inputs_var_list]
                 inputs_xr = xr.concat([hist_xr.isel(time=slice(-self.seq_length+1, None)), inputs_xr], dim='time')
@@ -263,8 +263,11 @@ class scenarIA(Dataset):
         sample_simu = self.simus_all[idx]
         if self.transform:
             x, y = self.transform((x, y))
-            x.float(), y.float()
-        return x, y, t, sample_simu
+            #x.float(), y.float()
+        if self.data_type == 'inference':
+            return x, t, sample_simu
+        else:
+            return x, y, t, sample_simu
 
 def get_climatology(config, climatology_simu: str='piControl', period=['1850-01-01', '2250-12-31']):
     dataset_path = DATASET_DIR / config['data']['dataset_path']

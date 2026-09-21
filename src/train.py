@@ -8,7 +8,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping, Learning
 import pytorch_lightning as pl
 
 from scenarIA.src.data.dataloader import get_dataloaders
-from scenarIA.src.data.lightning_module import scenarIALightningModule
+from scenarIA.src.data.lightning_module_climax import scenarIALightningModule
 from scenarIA.src.utils.utils import save_infos_from_config, test_name_from_config
 from scenarIA.src.utils.settings import CONFIG_DIR, RUNS_DIR, DATASET_DIR
 

@@ -8,8 +8,11 @@ class ToTensor:
     """Convert ndarrays in sample to Tensors."""
     def __call__(self, sample: tuple[np.ndarray, np.ndarray]) -> tuple[Tensor, Tensor]:
         x, y = sample
-        return torch.tensor(x, dtype=torch.float32), torch.tensor(y, dtype=torch.float32)
-    
+        if y is None:
+            return torch.tensor(x, dtype=torch.float32), y
+        else:
+            return torch.tensor(x, dtype=torch.float32), torch.tensor(y, dtype=torch.float32)
+        
 class Normalize:
     """Normalize a tensor sample with mean and standard deviation."""
     def __init__(self, stats):
@@ -50,7 +53,8 @@ class DiffClimatology: # a modifier
         if self.climatology is None:
             return x, y
         else:
-            y = y - self.climatology
+            if y is not None: # inference mode
+                y = y - self.climatology
             if self.add_clim_to_predictors:
                 mean = self.climatology.mean()
                 std = self.climatology.std()

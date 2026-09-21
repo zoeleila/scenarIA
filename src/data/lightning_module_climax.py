@@ -3,7 +3,6 @@
 """
 import sys
 
-from models import CNN
 sys.path.append('.')
 
 from pathlib import Path
@@ -16,9 +15,11 @@ import numpy as np
 import pytorch_lightning as pl
 import pandas as pd
 import matplotlib.pyplot as plt
-import segmentation_models_pytorch as smp
 from torchmetrics import PearsonCorrCoef, MeanSquaredError, MeanAbsoluteError
 
+from scenarIA.src.models.climax.lr_scheduler import LinearWarmupCosineAnnealingLR
+from scenarIA.src.models.climax.pos_embed import interpolate_pos_embed
+from scenarIA.src.models.climax.arch import ClimaXClimateBench
 from scenarIA.src.models.CNN import CNNBase
 from scenarIA.src.models.unet import UNet
 from scenarIA.src.models.time_unet import time_UNet
@@ -66,6 +67,8 @@ class scenarIALightningModule(pl.LightningModule):
         self.arch = config['train'].get('arch', 'cnn-lstm')
         self.encoder = config['train'].get('encoder', 'resnet18')
         self.L = config['train'].get('links', 5) # for trajgru
+        self.climax_cfg = config['train'].get('climax', {})
+
 
         self.predict_only_last_timestep = config['data']['predict_only_last_timestep']
         os.makedirs(self.runs_dir, exist_ok=True)
@@ -178,7 +181,61 @@ class scenarIALightningModule(pl.LightningModule):
                 self.model = AttentionUNet(img_ch=self.inputs_len*self.seq_length,
                                            output_ch=len(self.outputs)*output_seq_len,
                                            in_features=self.unet_features).float()
+                
+            case 'climax':
+                assert self.predict_only_last_timestep, "Only one output timestep"
+                c = self.climax_cfg
+                default_vars = list(self.inputs) + (['climatology'] if self.add_clim_to_predictors else [])
+                self.model = ClimaXClimateBench(
+                    default_vars=default_vars,
+                    out_vars=self.outputs[0],
+                    img_size=list(self.img_size),
+                    time_history=self.seq_length,
+                    patch_size=c.get('patch_size', 16),
+                    embed_dim=c.get('embed_dim', 1024),
+                    depth=c.get('depth', 8),
+                    decoder_depth=c.get('decoder_depth', 2),
+                    num_heads=c.get('num_heads', 16),
+                    mlp_ratio=c.get('mlp_ratio', 4.0),
+                    drop_path=c.get('drop_path', 0.1),
+                    drop_rate=c.get('drop_rate', 0.1),
+                    parallel_patch_embed=c.get('parallel_patch_embed', False),
+                    freeze_encoder=c.get('freeze_encoder', False),
+                ).float()
+                if c.get('pretrained_path'):
+                    self.load_pretrained_climax(c['pretrained_path'])
 
+    def load_pretrained_climax(self, pretrained_path):
+        # https://github.com/microsoft/ClimaX/blob/main/src/climax/climate_projection/module.py
+        if pretrained_path.startswith("http"):
+            checkpoint = torch.hub.load_state_dict_from_url(pretrained_path, map_location="cpu")
+        else:
+            checkpoint = torch.load(pretrained_path, map_location="cpu", weights_only=False)
+        print(f"Loading pre-trained checkpoint from: {pretrained_path}")
+        ckpt = checkpoint["state_dict"]
+
+        interpolate_pos_embed(self.model, ckpt, new_size=self.model.img_size)
+
+        if self.model.parallel_patch_embed and not any("token_embeds.proj_weights" in k for k in ckpt):
+            raise ValueError("Le checkpoint n'a pas token_embeds.proj_weights : convertis-le ou désactive parallel_patch_embed.")
+
+        ckpt = {k.replace("channel", "var"): v for k, v in ckpt.items()}
+        ckpt = {(k[len("net."):] if k.startswith("net.") else k): v for k, v in ckpt.items()}
+
+        model_sd = self.model.state_dict()
+        filtered = {}
+        for k, v in ckpt.items():
+            if 'token_embeds' in k or 'head' in k:      # ré-initialisés from scratch
+                print(f"Removing key {k} from pretrained checkpoint")
+                continue
+            if k not in model_sd or v.shape != model_sd[k].shape:
+                print(f"Removing key {k} from pretrained checkpoint")
+                continue
+            filtered[k] = v
+
+        msg = self.model.load_state_dict(filtered, strict=False)
+        print(msg)
+    
     def forward(self, x):
         if self.arch in ['unet', 'smaat-unet', 'attention-unet']:
             x = x.permute(0, 4, 1, 2, 3) # (B, C, T, lat, lon)
@@ -418,14 +475,27 @@ class scenarIALightningModule(pl.LightningModule):
                                 save_path=Path(self.logger.log_dir) / f'error_maps_{simu_name}.png')
 
     def configure_optimizers(self):
-        #optimizer = torch.optim.RMSprop(self.parameters(), lr=self.learning_rate)
-        optimizer = torch.optim.AdamW(self.parameters(), lr=self.learning_rate, weight_decay=1e-5)
+        if self.arch == 'climax':
+            # https://github.com/microsoft/ClimaX/blob/main/src/climax/climate_projection/module.py
+            decay, no_decay = [], []
+            for name, p in self.named_parameters():
+                if not p.requires_grad:
+                    continue
+                (no_decay if any(s in name for s in ["var_embed", "pos_embed", "time_pos_embed"]) else decay).append(p)
+            optimizer = torch.optim.AdamW(
+                [{"params": decay, "weight_decay": 1e-5},
+                {"params": no_decay, "weight_decay": 0}],
+                lr=self.learning_rate)
+            scheduler = LinearWarmupCosineAnnealingLR(
+                optimizer,
+                self.climax_cfg.get('warmup_epochs', 10),
+                self.climax_cfg.get('max_epochs', 100),
+                1e-8, 1e-8)
+            return {"optimizer": optimizer,
+                    "lr_scheduler": {"scheduler": scheduler, "interval": "epoch"}}
+
+        params = [p for p in self.parameters() if p.requires_grad]
+        optimizer = torch.optim.AdamW(params, lr=self.learning_rate, weight_decay=1e-5)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=self.scheduler_step_size, gamma=self.scheduler_gamma)
-        return {
-        "optimizer": optimizer,
-        "lr_scheduler": {
-            "scheduler": scheduler,
-            "interval": "epoch",
-            "monitor": self.monitor_metric
-        }
-    }
+        return {"optimizer": optimizer,
+                "lr_scheduler": {"scheduler": scheduler, "interval": "epoch", "monitor": self.monitor_metric}}

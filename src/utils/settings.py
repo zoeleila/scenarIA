@@ -12,6 +12,7 @@ GRAPHS_DIR = SCRATCH_DIR / 'graphs'
 PREDICTIONS_DIR = SCRATCH_DIR / 'predictions'
 
 SIMUS_COLORS_DICT = {'historical':'k',
+                     'hist-nat': 'steelblue',
                'hist-aer': 'darkorange',
                'hist-GHG': 'brown',
                'ssp119': 'y',
