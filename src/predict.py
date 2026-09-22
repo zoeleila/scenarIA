@@ -11,7 +11,7 @@ import xarray as xr
 
 from scenarIA.src.utils.settings import CONFIG_DIR, GRAPHS_DIR, RUNS_DIR, DATASET_DIR, PREDICTIONS_DIR
 from scenarIA.src.data.dataloader import get_dataloaders, get_climatology
-from scenarIA.src.data.lightning_module import scenarIALightningModule
+from scenarIA.src.data.lightning_module_climax import scenarIALightningModule
 from scenarIA.src.utils.datautils import standardize_units
 
 def predict(run_dir,

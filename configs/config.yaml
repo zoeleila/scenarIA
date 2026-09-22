@@ -13,13 +13,14 @@ data:
   timescale: 'annual'
   seq_length: 5
   moving_window: 1
+  smoothed_outputs: True
 
 
 train: # for training
   val_size: 0.2 # in case simus_val is None
   seed: 42
-  arch: 'climax'
-  learning_rate: 0.0005
+  arch: 'attention-unet'
+  learning_rate: 0.00005
   max_epochs: 100
   batch_size: 4
   runs_dir: 'MPI-ESM1-2-LR/annual/exp9/'
@@ -51,4 +52,4 @@ train: # for training
     drop_rate: 0.1
     parallel_patch_embed: false
     freeze_encoder: false
-    warmup_epochs: 10
+    warmup_epochs: 5

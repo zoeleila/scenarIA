@@ -42,6 +42,7 @@ class scenarIA(Dataset):
         self.seed_subsets = config['data']['seed_subsets']
         self.nb_member_per_subsets = config['data']['nb_member_per_subsets']
         self.one_to_many = bool(config['data']['one_to_many'])
+        self.smoothed_outputs = bool(config['data'].get('smoothed_outputs', False))
         
         if config['train']['simus_val']:
            valid_across_all_simus = False
@@ -144,10 +145,13 @@ class scenarIA(Dataset):
         time_all = []
 
         for i, simu in enumerate(self.simus):
-            outputs_xr_ensemble = xr.open_dataset(self.dataset_path / f'outputs_{simu}.nc')[self.outputs_var_list]
+            if self.smoothed_outputs and self.data_type != 'test': 
+                outputs_xr_ensemble = xr.open_dataset(self.dataset_path / f'outputs_{simu}_lowess0-1.nc')[self.outputs_var_list]
+            else:
+                outputs_xr_ensemble = xr.open_dataset(self.dataset_path / f'outputs_{simu}.nc')[self.outputs_var_list]
             member_size = outputs_xr_ensemble.member.size
-
-            if self.data_type == 'test':  # always compare with best estimation of forced response
+            
+            if self.data_type == 'test':  # always compare with best estimation of forced response (50 members)
                 self.nb_member_per_subsets = member_size
 
             n_subsets = self.nb_subsets if self.one_to_many else 1
