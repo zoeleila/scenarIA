@@ -416,7 +416,6 @@ def compare_metrics_maps(y, y_hat_dict, var_name, title=None, save_dir=None,
             levels = np.linspace(lim[0], lim[1], n_levels)
         else:
             levels = None
-        print(levels)
         cs = ax.contourf(data, cmap=cmap, levels=levels, extent=domain,
                           transform=transform, extend='both')
         ax.add_feature(cfeature.COASTLINE, linewidth=0.8, alpha=0.7)

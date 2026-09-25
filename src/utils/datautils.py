@@ -7,7 +7,7 @@ import pandas as pd
 import numpy as np
 import glob
 from scipy.stats import bootstrap
-
+import statsmodels.api as sm
 
 
 def standardize_dims_and_coords(ds) :
@@ -221,6 +221,19 @@ def get_statistics_from_bootstrap(data, n_bootstrap=1000):
                     random_state=42)
     return res
     
+def smooth_3Ddata(data, frac=0.1):
+    nt, nlat, nlon = data.shape
+    data2d = data.reshape(-1, data.shape[1]*data.shape[2])
+    
+    x = np.arange(0, nt)
+    y_lowess = np.empty_like(data2d)
+    lowess = sm.nonparametric.lowess
+    for i in range(data2d.shape[1]):
+        y = data2d[:,i]
+        y_lowess[:, i] = lowess(y, x, frac=frac, it=0, return_sorted=False)
+    
+    data_lowess = y_lowess.reshape(nt, nlat, nlon)
+    return data_lowess
 
 if __name__ == "__main__":
     data = np.random.rand(100, 96, 192)

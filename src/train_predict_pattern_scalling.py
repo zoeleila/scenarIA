@@ -107,9 +107,10 @@ if __name__ == "__main__":
     with open(CONFIG_DIR / 'plots.yaml') as file:
         config_plots = yaml.safe_load(file)
     
+    config['data']['smoothed_outputs'] = False
     config['data']['seq_length'] = 1
     config['train']['batch_size'] = 1
-    config['train']['simus_train'] = ['historical', 'ssp119', 'ssp126', 'ssp585']
+    #config['train']['simus_train'] = ['historical', 'ssp119', 'ssp126', 'ssp585']
     config['data']['add_clim_to_predictors'] = False
     lat = dict(np.load(DATASET_DIR / config['data']['dataset_path'] / 'coords.npz', allow_pickle=True))['lat']
     lon = dict(np.load(DATASET_DIR / config['data']['dataset_path'] / 'coords.npz', allow_pickle=True))['lon']
@@ -169,8 +170,7 @@ if __name__ == "__main__":
     ax.legend(handles=handles, loc='lower right')
     ax.set_xlabel('Cumulative CO2 anthropique emissions')
     ax.set_ylabel('Global mean temperature')
-    ax.set_title('Lutjens')
-    plt.savefig(GRAPHS_DIR/f'runs/MPI-ESM1-2-LR/annual/exp9/global_forcings_to_global_{simu_test}_tas_and_CO2_pattern_scaling_5simus.png')
+    plt.savefig(GRAPHS_DIR/f'runs/MPI-ESM1-2-LR/annual/exp9/global_forcings_to_global_{simu_test}_tas_and_CO2_pattern_scaling.png')
 
     
     
@@ -214,7 +214,7 @@ if __name__ == "__main__":
     plt.ylabel('Temperature Anomalies (°C)')
     plt.title(f'Global mean Predictions ({simu_test})')
     plt.legend()
-    plt.savefig(GRAPHS_DIR/ f'runs/MPI-ESM1-2-LR/annual/exp9/global_forcings_to_global_{simu_test}_tas_pattern_scaling_5simus.png')
+    plt.savefig(GRAPHS_DIR/ f'runs/MPI-ESM1-2-LR/annual/exp9/global_forcings_to_global_{simu_test}_tas_pattern_scaling.png')
 
     # Fit global tas to local var (univariate)
     if var_name == 'tas':
@@ -250,7 +250,7 @@ if __name__ == "__main__":
     plt.ylabel(f'{var_name} Anomalies')
     plt.title(f'Global mean predictions ({simu_test})')
     plt.legend()
-    plt.savefig(GRAPHS_DIR/ f'runs/MPI-ESM1-2-LR/annual/exp9/global_tas_to_local_{simu_test}_{var_name}_pattern_scaling_5simus.png')
+    plt.savefig(GRAPHS_DIR/ f'runs/MPI-ESM1-2-LR/annual/exp9/global_tas_to_local_{simu_test}_{var_name}_pattern_scaling.png')
 
 
     pred_out_local = pred_out_local
@@ -270,4 +270,4 @@ if __name__ == "__main__":
     ds = standardize_units(ds)
     print(ds)
     ds.to_netcdf(
-        PREDICTIONS_DIR / f'MPI-ESM1-2-LR/annual/exp9/MPI-ESM1-2-LR_annual_exp9_{simu_test}_{var_name}_pattern-scaling_seq1_mem30_5simus.nc')
+        PREDICTIONS_DIR / f'MPI-ESM1-2-LR/annual/exp9/MPI-ESM1-2-LR_annual_exp9_{simu_test}_{var_name}_pattern-scaling_seq1_mem30.nc')
