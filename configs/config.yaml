@@ -1,5 +1,5 @@
 data:
-  exp: 'exp12'
+  exp: 'exp13'
   model_name: 'MPI-ESM1-2-LR'
   raw_path: 'MPI-ESM1-2-LR/r1-r50i1p1f1/'
   dataset_path: 'MPI-ESM1-2-LR/annual/'
@@ -19,16 +19,16 @@ data:
 train: # for training
   val_size: 0.2 # in case simus_val is None
   seed: 42
-  arch: 'attention-unet'
-  learning_rate: 0.0001
+  arch: 'cnn-gru'
+  learning_rate: 0.001
   max_epochs: 100
   batch_size: 16
-  runs_dir: 'MPI-ESM1-2-LR/annual/exp12/'
+  runs_dir: 'MPI-ESM1-2-LR/annual/exp13/'
   inputs: ['CO2', 'SO2', 'CH4', 'BC', 'tau']
   outputs: ['tas'] # carefull seq_length
-  simus_train: ['historical', 'hist-nat', 'hist-GHG', 'ssp119', 'ssp126', 'ssp585']
+  simus_train: ['historical', 'hist-aer_1950-2014', 'hist-nat', 'hist-GHG', 'ssp119', 'ssp126', 'ssp585']
   simus_val: ['ssp370']
-  simus_test: ['ssp245']
+  simus_test: ['ssp245', 'hist-aer_1850-1949']
   simus_inference: ['ssp245']
   img_size: [96, 192]
   scheduler_step_size: 50

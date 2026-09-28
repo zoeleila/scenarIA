@@ -102,6 +102,8 @@ class scenarIALightningModule(pl.LightningModule):
         self.test_step_outputs_hat = []
         self.test_step_simus = [] 
         self.test_step_times = []
+        self.first_test_simu = self.simus_test[0] # pour calculer les scores
+        self._test_fig_logged = False
 
         self.save_hyperparameters(ignore=['lats'])
         self.epoch_start_time = None
@@ -376,37 +378,40 @@ class scenarIALightningModule(pl.LightningModule):
     def test_step(self, batch, batch_idx):
         x, y, t, simu = batch
         y_hat, loss = self.common_step(x, y)
-        self.log("test_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
-            
-        batch_dict = {"loss": loss}
-        for metric_name, metric in self.metrics_dict.items():
-            print(y_hat.shape, y.shape)
-            metric.update(y_hat, y)
-            batch_dict[metric_name] = metric.compute()
-            self.logger.experiment.add_scalar(metric_name, metric.compute(), batch_idx)
-            metric.reset()
-        self.test_metrics[batch_idx] = batch_dict
-
-        y_flat = y.mean(dim=1).flatten() # [batch, lat, lon]
-        y_hat_flat = y_hat.mean(dim=1).flatten()
-        self.spatial_corr_metric.update(y_hat_flat, y_flat)
 
         self.test_step_outputs_true.append(y)
         self.test_step_outputs_hat.append(y_hat)
         self.test_step_times.append(t)
         self.test_step_simus.append(simu)
 
-        if batch_idx == 0:
+        if simu[0] != self.first_test_simu:
+            return
 
+        self.log("test_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
+
+        batch_dict = {"loss": loss}
+        for metric_name, metric in self.metrics_dict.items():
+            metric.update(y_hat, y)
+            batch_dict[metric_name] = metric.compute()
+            self.logger.experiment.add_scalar(metric_name, metric.compute(), batch_idx)
+            metric.reset()
+        self.test_metrics[batch_idx] = batch_dict
+
+        y_flat = y.mean(dim=1).flatten()  # [batch, lat, lon]
+        y_hat_flat = y_hat.mean(dim=1).flatten()
+        self.spatial_corr_metric.update(y_hat_flat, y_flat)
+
+        if not self._test_fig_logged:
+            self._test_fig_logged = True
             fig, ax = plt.subplots()
             vmin, vmax = np.min(y.cpu().numpy()), np.max(y.cpu().numpy())
             levels = np.linspace(vmin, vmax, 11)
-            cs = ax.contourf(y[batch_idx,0,:,:].cpu().numpy(), cmap='OrRd', levels=levels)
+            cs = ax.contourf(y[0, 0, :, :].cpu().numpy(), cmap='OrRd', levels=levels)
             plt.colorbar(cs, ax=ax, pad=0.05)
-            self.logger.experiment.add_figure('Figure/test_y_0', fig) 
-    
+            self.logger.experiment.add_figure('Figure/test_y_0', fig)
+
             fig, ax = plt.subplots()
-            cs = ax.contourf(y_hat[batch_idx,0,:,:].cpu().numpy(), cmap='OrRd', levels=levels)
+            cs = ax.contourf(y_hat[0, 0, :, :].cpu().numpy(), cmap='OrRd', levels=levels)
             plt.colorbar(cs, ax=ax, pad=0.05)
             self.logger.experiment.add_figure('Figure/test_yhat_0', fig)
  
@@ -424,26 +429,20 @@ class scenarIALightningModule(pl.LightningModule):
         df.to_csv(path_csv, index=False)
     
     def on_test_epoch_end(self):
+        # --- Scores et DataFrame : première simu uniquement ---
         df = self.build_metrics_dataframe()
         self.save_test_metrics_as_csv(df)
         df = df.drop("Name", axis=1)
-
-        y_all = torch.stack(self.test_step_outputs_true, axis=0).view(-1, self.img_size[0], self.img_size[1])
-        y_hat_all = torch.stack(self.test_step_outputs_hat, axis=0).view(-1, self.img_size[0], self.img_size[1])
-        t_all = torch.cat(self.test_step_times).cpu().numpy()
-
-        test_nrmse = NRMSE_ClimateBench(y_hat_all, y_all, self.lats) # all time period
-        self.log('test_nrmse', test_nrmse)
         self.log('loss', df['loss'].mean())
-        spatial_corr = self.spatial_corr_metric.compute()
-        self.log("test_corr", spatial_corr)
+        self.log("test_corr", self.spatial_corr_metric.compute())
 
+        # --- Regroupement par simu ---
         outputs_per_simu = {}
         for y, y_hat, t, simu in zip(
             self.test_step_outputs_true,
             self.test_step_outputs_hat,
             self.test_step_times,
-            self.test_step_simus 
+            self.test_step_simus
         ):
             simu_name = simu[0]
             if simu_name not in outputs_per_simu:
@@ -457,22 +456,35 @@ class scenarIALightningModule(pl.LightningModule):
             y_hat_s = torch.cat(outputs['hat'], dim=0).view(-1, self.img_size[0], self.img_size[1])
             t_s = torch.cat(outputs['times']).cpu().numpy()
 
+            nrmse_s = NRMSE_ClimateBench(y_hat_s, y_s, self.lats)
+            self.log(f'test_nrmse_{simu_name}', nrmse_s)
+            if simu_name == self.first_test_simu:
+                self.log('test_nrmse', nrmse_s)  # métrique "principale" = première simu
+
             fig, ax = plt.subplots()
             ax.plot(weighted_global_mean(y_s, self.lats).cpu().numpy(), label='True')
             ax.plot(weighted_global_mean(y_hat_s, self.lats).cpu().numpy(), label='Predicted')
             ax.set_xlabel('time')
             ax.set_ylabel(f'{self.outputs} value')
-            ax.set_title(f'Test {simu_name} {t_s[0,0]:.0f}-{t_s[-1,0]:.0f} – NRMSE : {test_nrmse:.4f}')
+            ax.set_title(f'Test {simu_name} {t_s[0,0]:.0f}-{t_s[-1,0]:.0f} – NRMSE : {nrmse_s:.4f}')
             ax.legend()
             self.logger.experiment.add_figure(f'Figure/test_true_vs_predicted_{simu_name}', fig)
 
-            eval = EvaluationPlots(simulation_name=simu_name,
-                                var_name=self.outputs[0],
-                                config_plots=self.config_plots)
-            eval.plot_error_maps(y_s.cpu().numpy(),
-                                y_hat_s.cpu().numpy(),
-                                title=f'{simu_name} {t_s[0,0]:.0f}-{t_s[-1,0]:.0f}',
-                                save_path=Path(self.logger.log_dir) / f'error_maps_{simu_name}.png')
+            if simu_name == self.first_test_simu:
+                eval = EvaluationPlots(simulation_name=simu_name,
+                                       var_name=self.outputs[0],
+                                       config_plots=self.config_plots)
+                eval.plot_error_maps(y_s.cpu().numpy(),
+                                     y_hat_s.cpu().numpy(),
+                                     title=f'{simu_name} {t_s[0,0]:.0f}-{t_s[-1,0]:.0f}',
+                                     save_path=Path(self.logger.log_dir) / f'error_maps_{simu_name}.png')
+
+        self.test_step_outputs_true.clear()
+        self.test_step_outputs_hat.clear()
+        self.test_step_times.clear()
+        self.test_step_simus.clear()
+        self.spatial_corr_metric.reset()
+        self._test_fig_logged = False
 
     def configure_optimizers(self):
         if self.arch == 'climax':

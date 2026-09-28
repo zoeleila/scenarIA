@@ -108,7 +108,7 @@ class scenarIA(Dataset):
 
         for simu in self.simus:
             inputs_xr = xr.open_dataset(self.dataset_path / f'inputs_{simu}_regrid2.nc')[self.inputs_var_list]
-            if (self.data_type == 'test') and self.seq_length > 1: # supposing only future scenarios test
+            if (self.data_type == 'test') and self.seq_length > 1 and simu.startswith('ssp'): # supposing only future scenarios test
                 hist_xr = xr.open_dataset(
                     self.dataset_path / f'inputs_historical_regrid2.nc')[self.inputs_var_list]
                 inputs_xr = xr.concat([hist_xr.isel(time=slice(-self.seq_length+1, None)), inputs_xr], dim='time')
@@ -166,7 +166,7 @@ class scenarIA(Dataset):
                         mean=True
                     )
 
-                if self.data_type == 'test' and self.seq_length > 1:
+                if self.data_type == 'test' and self.seq_length > 1 and simu.startswith('ssp'):
                     hist_xr = xr.open_dataset(
                         self.dataset_path / f'outputs_historical.nc')[self.outputs_var_list].mean('member')
                     outputs_xr = xr.concat([hist_xr.isel(time=slice(-self.seq_length+1, None)), outputs_xr], dim='time')
