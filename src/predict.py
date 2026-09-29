@@ -72,6 +72,11 @@ def save_predictions_as_netcdf(runs_to_predict, data_type='test', simus_to_predi
         test_name = test_name.replace(f'_seed{seed}_', '_')
         lat = dict(np.load(DATASET_DIR / hparams['data']['dataset_path'] / 'coords.npz', allow_pickle=True))['lat']
         lon = dict(np.load(DATASET_DIR / hparams['data']['dataset_path'] / 'coords.npz', allow_pickle=True))['lon']
+        if hparams['data'].get('lonshift', False):
+            new_lon = lon % 360
+            idx = np.argsort(new_lon, kind="stable")
+            y_hat_all = np.take(y_hat_all, idx, axis=-1)
+            print(new_lon[idx])
         climatology = get_climatology(hparams)
         y_hat_all = y_hat_all + climatology.squeeze() # à modifier quand multivarié
         y_hat_all_list.append(y_hat_all)

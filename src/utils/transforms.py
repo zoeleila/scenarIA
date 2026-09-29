@@ -3,6 +3,9 @@ from torch import Tensor
 import numpy as np
 import json
 
+from scenarIA.src.utils.datautils import shift_longitudes
+import matplotlib.pyplot as plt
+from scenarIA.src.utils.settings import RUNS_DIR, DATASET_DIR, CONFIG_DIR, GRAPHS_DIR
 
 class ToTensor:
     """Convert ndarrays in sample to Tensors."""
@@ -62,6 +65,49 @@ class DiffClimatology: # a modifier
                 clim = self.clim_normalized[None, :, :, None].expand(x.shape[0], -1, -1, -1)
                 x = torch.cat((x, clim), dim=-1)
             return x, y
+
+class LonShift:
+    """Convertit les longitudes de [0, 360] vers [-180, 180].
+
+    Les données x et y sont réordonnées le long de la dimension -2 (longitude)
+    pour que les longitudes soient croissantes dans [-180, 180].
+    """
+
+    def __init__(self, lonshift=False, lon: Tensor=None):
+        self.lonshift = lonshift
+        lon = torch.as_tensor(lon)
+        new_lon = shift_longitudes(lon)
+        self.idx = torch.argsort(new_lon, stable=True)
+        self.lon = new_lon[self.idx]
+
+    def __call__(self, sample: tuple[Tensor, Tensor]) -> tuple[Tensor, Tensor]:
+        x, y = sample
+        if self.lonshift:
+            x = x.index_select(-2, self.idx.to(x.device)) # B, T, H, W, C
+            y = y.index_select(-1, self.idx.to(y.device)) # B, T, H, W
+        return x, y
+class LonUnshift:
+    """Convertit les longitudes de [-180, 180] vers [0, 360].
+
+    Les données x et y sont réordonnées le long de la dimension -2 (longitude)
+    pour que les longitudes soient croissantes dans [0, 360].
+    """
+
+    def __init__(self, lonshift=False, lon: Tensor=None):
+        self.lonshift = lonshift
+        lon = torch.as_tensor(lon)
+        # Longitudes converties : -180..180 -> 0..360
+        new_lon = lon % 360
+        # Indices de permutation pour trier les longitudes de façon croissante
+        self.idx = torch.argsort(new_lon, stable=True)
+        self.lon = new_lon[self.idx]  # nouveau tenseur de longitudes
+
+    def __call__(self, sample: tuple[Tensor, Tensor]) -> tuple[Tensor, Tensor]:
+        x, y = sample
+        if self.lonshift:
+            x = x.index_select(-2, self.idx.to(x.device))
+            y = y.index_select(-1, self.idx.to(y.device))
+        return x, y
 
 
 # padding

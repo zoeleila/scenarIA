@@ -100,6 +100,7 @@ def LLweighted_RMSE_Climax(
     y_hat: torch.Tensor, y: torch.Tensor, lats: torch.Tensor, mask=None
 ):
     weights = compute_weights_from_lats(lats)
+    weights = weights.unsqueeze(-1)
     if mask is not None:
         error = (((y_hat - y) ** 2) * weights * mask).sum() / mask.sum()
     else:

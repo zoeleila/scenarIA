@@ -235,6 +235,10 @@ def smooth_3Ddata(data, frac=0.1):
     data_lowess = y_lowess.reshape(nt, nlat, nlon)
     return data_lowess
 
+def shift_longitudes(lon):
+    new_lon = ((lon + 180) % 360) - 180
+    return new_lon
+
 if __name__ == "__main__":
     data = np.random.rand(100, 96, 192)
     res = get_statistics_from_bootstrap(data, n_bootstrap=1000)

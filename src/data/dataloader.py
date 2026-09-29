@@ -1,4 +1,3 @@
-from pkgutil import get_data
 from torch.utils.data import Dataset, DataLoader
 from torchvision.transforms import v2
 import numpy as np
@@ -17,7 +16,7 @@ from matplotlib.lines import Line2D
 import copy
 
 
-from scenarIA.src.utils.transforms import ToTensor, Normalize, DiffClimatology
+from scenarIA.src.utils.transforms import ToTensor, Normalize, DiffClimatology, LonShift
 from scenarIA.src.utils.settings import RUNS_DIR, DATASET_DIR, CONFIG_DIR, GRAPHS_DIR
 from scenarIA.src.utils.plotutils import plot_hist, plot_multi_samples
 from scenarIA.src.utils.datautils import weighted_global_mean
@@ -265,6 +264,7 @@ class scenarIA(Dataset):
                             pd.to_datetime(t64).month,
                             pd.to_datetime(t64).day])
         sample_simu = self.simus_all[idx]
+        
         if self.transform:
             x, y = self.transform((x, y))
             #x.float(), y.float()
@@ -296,15 +296,18 @@ def get_dataset(config, data_type: str = 'train', transforms: bool = True):
            stats = compute_statistics(copy.deepcopy(config), seeds=seed)
         piControl_diff = bool(config['data']['piControl_diff'])
         add_clim_to_predictors = bool(config['data'].get('add_clim_to_predictors', False))
+        lonshift = bool(config['data'].get('lonshift', False))
         if piControl_diff:
             climatology = get_climatology(config)
             climatology = torch.tensor(climatology, dtype=torch.float32).squeeze()
         else:
             climatology = None
+        lon = dict(np.load(DATASET_DIR / config['data']['dataset_path'] / 'coords.npz', allow_pickle=True))['lon']
         transforms = v2.Compose([ToTensor(),
                                  Normalize(stats = stats[str(seed)]),
                                  DiffClimatology(climatology=climatology, 
-                                                 add_clim_to_predictors=add_clim_to_predictors)])
+                                                 add_clim_to_predictors=add_clim_to_predictors),
+                                LonShift(lonshift=lonshift, lon=lon)])
     else:
         transforms = v2.Compose([ToTensor()])
     

@@ -12,16 +12,15 @@ compare:
   predictions_to_compare: # to compare predictions (seeds mean)
 
 predict:
-  'clim':
-    - MPI-ESM1-2-LR/annual/exp13/tas_attention-unet_seed42_seq10_mem30/lightning_logs/version_0
-    - MPI-ESM1-2-LR/annual/exp13/tas_attention-unet_seed43_seq10_mem30/lightning_logs/version_0
+  'clim_lonshift':
+
+    - MPI-ESM1-2-LR/annual/exp13/tas_attention-unet_seed42_seq10_mem30/lightning_logs/version_1
+    - MPI-ESM1-2-LR/annual/exp13/tas_attention-unet_seed43_seq10_mem30/lightning_logs/version_1
     - MPI-ESM1-2-LR/annual/exp13/tas_attention-unet_seed44_seq10_mem30/lightning_logs/version_0
-    - MPI-ESM1-2-LR/annual/exp13/tas_attention-unet_seed45_seq10_mem30/lightning_logs/version_0
-    - MPI-ESM1-2-LR/annual/exp13/tas_attention-unet_seed46_seq10_mem30/lightning_logs/version_0
-    - MPI-ESM1-2-LR/annual/exp13/tas_attention-unet_seed47_seq10_mem30/lightning_logs/version_0
-    - MPI-ESM1-2-LR/annual/exp13/tas_attention-unet_seed48_seq10_mem30/lightning_logs/version_0
-    - MPI-ESM1-2-LR/annual/exp13/tas_attention-unet_seed49_seq10_mem30/lightning_logs/version_0
-    - MPI-ESM1-2-LR/annual/exp13/tas_attention-unet_seed50_seq10_mem30/lightning_logs/version_0
-    - MPI-ESM1-2-LR/annual/exp13/tas_attention-unet_seed51_seq10_mem30/lightning_logs/version_0
-
-
+    - MPI-ESM1-2-LR/annual/exp13/tas_attention-unet_seed45_seq10_mem30/lightning_logs/version_1
+    - MPI-ESM1-2-LR/annual/exp13/tas_attention-unet_seed46_seq10_mem30/lightning_logs/version_1
+    - MPI-ESM1-2-LR/annual/exp13/tas_attention-unet_seed47_seq10_mem30/lightning_logs/version_1
+    - MPI-ESM1-2-LR/annual/exp13/tas_attention-unet_seed48_seq10_mem30/lightning_logs/version_1
+    - MPI-ESM1-2-LR/annual/exp13/tas_attention-unet_seed49_seq10_mem30/lightning_logs/version_1
+    - MPI-ESM1-2-LR/annual/exp13/tas_attention-unet_seed50_seq10_mem30/lightning_logs/version_1
+    - MPI-ESM1-2-LR/annual/exp13/tas_attention-unet_seed51_seq10_mem30/lightning_logs/version_1
