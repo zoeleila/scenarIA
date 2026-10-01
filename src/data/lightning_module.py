@@ -3,7 +3,6 @@
 """
 import sys
 
-from models import CNN
 sys.path.append('.')
 
 from pathlib import Path
@@ -16,17 +15,13 @@ import numpy as np
 import pytorch_lightning as pl
 import pandas as pd
 import matplotlib.pyplot as plt
-import segmentation_models_pytorch as smp
 from torchmetrics import PearsonCorrCoef, MeanSquaredError, MeanAbsoluteError
 
-from scenarIA.src.models.CNN import CNNBase
-from scenarIA.src.models.unet import UNet
-from scenarIA.src.models.time_unet import time_UNet
-from scenarIA.src.models.convlstm import ConvLSTM
-from scenarIA.src.models.convgru import ConvGRU
-from scenarIA.src.models.trajGRU import TrajGRUMultiLayer
-from scenarIA.src.models.smaat_unet import SmaAt_UNet
-from scenarIA.src.models.attention_unet import AttentionUNet
+from scenarIA.src.models.CNNLSTM import CNNLSTMModel
+from scenarIA.src.models.climax.lr_scheduler import LinearWarmupCosineAnnealingLR
+from scenarIA.src.models.climax.pos_embed import interpolate_pos_embed
+from scenarIA.src.utils.models import  build_model, Dims
+from scenarIA.src.utils.config import migrate_config
 from scenarIA.src.utils.losses import LLweighted_MSELoss_Climax
 from scenarIA.src.utils.metrics import NRMSE_ClimateBench, LatWeightedRMSEMetric, NRMSE_g_ClimateBench, NRMSE_s_ClimateBench
 from scenarIA.src.utils.datautils import weighted_global_mean
@@ -41,33 +36,30 @@ layout = {
 }
 
 class scenarIALightningModule(pl.LightningModule):
-    def __init__(self, config:dict, lats=None):
+    def __init__(self, config: dict, lats=None, load_pretrained: bool = True):
         super().__init__()
-        self.seq_length = config['data']['seq_length']
-        self.learning_rate = config['train']['learning_rate']
-        self.runs_dir = RUNS_DIR / config['train']['runs_dir']
-        self.outputs = config['train']['outputs']
-        inputs = config['train']['inputs']
-        self.inputs = inputs[:-1] if 'climatology' in inputs else inputs # for a specific run ...
-        self.add_clim_to_predictors = bool(config['data'].get('add_clim_to_predictors', False))
-        if self.add_clim_to_predictors:
-            self.inputs_len = len(self.inputs) + 1
-        else:
-            self.inputs_len = len(self.inputs)
-        self.img_size = config['train']['img_size']
-        self.simus_val = config['train'].get('simus_val', None) # ['ssp370'] or None for old runs
-        self.simus_test = config['train']['simus_test']
-        self.scheduler_step_size = config['train']['scheduler_step_size']
-        self.scheduler_gamma = config['train']['scheduler_gamma']
-        
-        # Hyperparameters for different architectures
-        self.unet_features = config['train'].get('unet_features', 32) # for old runs
-        self.lstm_units = config['train'].get('lstm_units', 25) # for old runs
-        self.arch = config['train'].get('arch', 'cnn-lstm')
-        self.encoder = config['train'].get('encoder', 'resnet18')
-        self.L = config['train'].get('links', 5) # for trajgru
+        config = migrate_config(config)                  # rétrocompat, automatique au load_from_checkpoint
+        self.save_hyperparameters({'config': config})    # sauvegarde la config migrée
 
-        self.predict_only_last_timestep = config['data']['predict_only_last_timestep']
+        data, train = config['data'], config['train']
+        self.seq_length = data['seq_length']
+        self.predict_only_last_timestep = data['predict_only_last_timestep']
+        self.add_clim_to_predictors = bool(data['add_clim_to_predictors'])
+
+        self.inputs = [i for i in train['inputs'] if i != 'climatology']
+        self.inputs_len = len(self.inputs) + int(self.add_clim_to_predictors)
+        self.outputs = train['outputs']
+        self.arch = train['arch']
+        self.learning_rate = train['learning_rate']
+        self.img_size = train['img_size']
+        self.simus_val = train['simus_val']
+        self.simus_test = train['simus_test']
+        self.scheduler_step_size = train['scheduler_step_size']
+        self.scheduler_gamma = train['scheduler_gamma']
+        self.monitor_metric = train['monitor_metric']
+        self.alpha = train['alpha']
+        self.climax_cfg = train.get('climax', {})
+        self.runs_dir = RUNS_DIR / train['runs_dir']
         os.makedirs(self.runs_dir, exist_ok=True)
 
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -90,7 +82,15 @@ class scenarIALightningModule(pl.LightningModule):
         self.monitor_metric = config['train'].get('monitor_metric', 'val_rmse') # for best checkpointing and hyperparameter optimization
         self.alpha = config['train'].get('alpha', 5)
 
-        self.get_model()
+        dims = Dims(
+            var_names=self.inputs + (['climatology'] if self.add_clim_to_predictors else []),
+            out_vars=self.outputs, seq_length=self.seq_length,
+            predict_only_last=self.predict_only_last_timestep,
+            img_size=tuple(self.img_size))
+        self.model = build_model(config, dims)
+        if self.arch == 'climax' and load_pretrained and self.climax_cfg.get('pretrained_path'):
+            self.load_pretrained_climax(self.climax_cfg['pretrained_path'])
+
         self.time_per_epoch = []
         self.test_metrics = {}
         self.train_step_outputs = []
@@ -99,86 +99,47 @@ class scenarIALightningModule(pl.LightningModule):
         self.test_step_outputs_hat = []
         self.test_step_simus = [] 
         self.test_step_times = []
+        self.first_test_simu = self.simus_test[0] # pour calculer les scores
+        self._test_fig_logged = False
 
-        self.save_hyperparameters(ignore=['lats'])
         self.epoch_start_time = None
 
         with open(CONFIG_DIR / 'plots.yaml') as file:
             config_plots = yaml.safe_load(file)
         self.config_plots = config_plots
 
-    def get_model(self): # à modifier un jour pour ne pas avoir à donner les hp de chaque archis à chaque fois
-        if self.predict_only_last_timestep:
-            output_seq_len = 1
+    
+    def load_pretrained_climax(self, pretrained_path):
+        # https://github.com/microsoft/ClimaX/blob/main/src/climax/climate_projection/module.py
+        if pretrained_path.startswith("http"):
+            checkpoint = torch.hub.load_state_dict_from_url(pretrained_path, map_location="cpu")
         else:
-            output_seq_len = self.seq_length
-        match self.arch:
-            case 'cnn-lstm':
-                self.model = CNNBase(slider=self.seq_length, height=self.img_size[0], width=self.img_size[1], channels=self.inputs_len,
-                                     output_seq_len=output_seq_len, time_module_name='lstm', hidden_size=self.lstm_units).float()
-            case 'cnn-gru':
-                self.model = CNNBase(slider=self.seq_length, height=self.img_size[0], width=self.img_size[1], channels=self.inputs_len,
-                                     output_seq_len=output_seq_len, time_module_name='gru', hidden_size=self.lstm_units).float()
-            
-            case 'unet':
-                # variables and timesteps are concatenated in the channel dimension
-                self.model = UNet(in_channels=self.inputs_len*self.seq_length, 
-                                  out_channels=len(self.outputs)*output_seq_len, 
-                                  init_features=self.unet_features).float()
-            case 'time-unet':
-                self.model = time_UNet(
-                    num_input_vars=self.inputs_len,
-                    num_output_vars=len(self.outputs),
-                    longitude=self.img_size[1],
-                    latitude=self.img_size[0],
-                    activation_function=None,
-                    datamodule_config=None,
-                    channels_last=True,
-                    seq_to_seq=not self.predict_only_last_timestep,
-                    seq_len=self.seq_length,
-                ).float()
+            checkpoint = torch.load(pretrained_path, map_location="cpu", weights_only=False)
+        print(f"Loading pre-trained checkpoint from: {pretrained_path}")
+        ckpt = checkpoint["state_dict"]
 
-            case 'convlstm':
-                hidden_dim = self.lstm_units
-                if isinstance(hidden_dim, int):
-                    hidden_dim = [hidden_dim]  # Convert to list if it's a single integer
-                self.model = ConvLSTM(input_dim=self.inputs_len, 
-                                    hidden_dim=hidden_dim, 
-                                    kernel_size=(3, 3),
-                                    num_layers=len(hidden_dim), 
-                                    batch_first=True, 
-                                    bias=True, 
-                                    return_all_layers=False).float()
-            case 'convgru':
-                hidden_dim = self.lstm_units
-                if isinstance(hidden_dim, int):
-                    hidden_dim = [hidden_dim]  # Convert to list if it's a single integer
-                self.model = ConvGRU(input_size=(self.img_size[0], self.img_size[1]),
-                                    input_dim=self.inputs_len, 
-                                    hidden_dim=hidden_dim, 
-                                    kernel_size=(3, 3),
-                                    num_layers=len(hidden_dim), 
-                                    batch_first=True, 
-                                    bias=True, 
-                                    return_all_layers=False).float()
-            case 'trajgru':
-                self.model = TrajGRUMultiLayer(input_size=(self.img_size[0], self.img_size[1]), 
-                                            input_dim=self.inputs_len, 
-                                            hidden_dim=self.lstm_units, 
-                                            L=self.L, 
-                                            num_layers=1,
-                                            batch_first=True, 
-                                            return_all_layers=False).float()
-            case 'smaat-unet':
-                self.model = SmaAt_UNet(n_channels=self.inputs_len*self.seq_length, 
-                                        n_classes=len(self.outputs)*output_seq_len,
-                                        in_features=self.unet_features,
-                                        bilinear=False).float()
-            case 'attention-unet':
-                self.model = AttentionUNet(img_ch=self.inputs_len*self.seq_length,
-                                           output_ch=len(self.outputs)*output_seq_len,
-                                           in_features=self.unet_features).float()
+        interpolate_pos_embed(self.model, ckpt, new_size=self.model.img_size)
 
+        if self.model.parallel_patch_embed and not any("token_embeds.proj_weights" in k for k in ckpt):
+            raise ValueError("Le checkpoint n'a pas token_embeds.proj_weights : convertis-le ou désactive parallel_patch_embed.")
+
+        ckpt = {k.replace("channel", "var"): v for k, v in ckpt.items()}
+        ckpt = {(k[len("net."):] if k.startswith("net.") else k): v for k, v in ckpt.items()}
+
+        model_sd = self.model.state_dict()
+        filtered = {}
+        for k, v in ckpt.items():
+            if 'token_embeds' in k or 'head' in k:      # ré-initialisés from scratch
+                print(f"Removing key {k} from pretrained checkpoint")
+                continue
+            if k not in model_sd or v.shape != model_sd[k].shape:
+                print(f"Removing key {k} from pretrained checkpoint")
+                continue
+            filtered[k] = v
+
+        msg = self.model.load_state_dict(filtered, strict=False)
+        print(msg)
+    
     def forward(self, x):
         if self.arch in ['unet', 'smaat-unet', 'attention-unet']:
             x = x.permute(0, 4, 1, 2, 3) # (B, C, T, lat, lon)
@@ -319,37 +280,40 @@ class scenarIALightningModule(pl.LightningModule):
     def test_step(self, batch, batch_idx):
         x, y, t, simu = batch
         y_hat, loss = self.common_step(x, y)
-        self.log("test_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
-            
-        batch_dict = {"loss": loss}
-        for metric_name, metric in self.metrics_dict.items():
-            print(y_hat.shape, y.shape)
-            metric.update(y_hat, y)
-            batch_dict[metric_name] = metric.compute()
-            self.logger.experiment.add_scalar(metric_name, metric.compute(), batch_idx)
-            metric.reset()
-        self.test_metrics[batch_idx] = batch_dict
-
-        y_flat = y.mean(dim=1).flatten() # [batch, lat, lon]
-        y_hat_flat = y_hat.mean(dim=1).flatten()
-        self.spatial_corr_metric.update(y_hat_flat, y_flat)
 
         self.test_step_outputs_true.append(y)
         self.test_step_outputs_hat.append(y_hat)
         self.test_step_times.append(t)
         self.test_step_simus.append(simu)
 
-        if batch_idx == 0:
+        if simu[0] != self.first_test_simu:
+            return
 
+        self.log("test_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
+
+        batch_dict = {"loss": loss}
+        for metric_name, metric in self.metrics_dict.items():
+            metric.update(y_hat, y)
+            batch_dict[metric_name] = metric.compute()
+            self.logger.experiment.add_scalar(metric_name, metric.compute(), batch_idx)
+            metric.reset()
+        self.test_metrics[batch_idx] = batch_dict
+
+        y_flat = y.mean(dim=1).flatten()  # [batch, lat, lon]
+        y_hat_flat = y_hat.mean(dim=1).flatten()
+        self.spatial_corr_metric.update(y_hat_flat, y_flat)
+
+        if not self._test_fig_logged:
+            self._test_fig_logged = True
             fig, ax = plt.subplots()
             vmin, vmax = np.min(y.cpu().numpy()), np.max(y.cpu().numpy())
             levels = np.linspace(vmin, vmax, 11)
-            cs = ax.contourf(y[batch_idx,0,:,:].cpu().numpy(), cmap='OrRd', levels=levels)
+            cs = ax.contourf(y[0, 0, :, :].cpu().numpy(), cmap='OrRd', levels=levels)
             plt.colorbar(cs, ax=ax, pad=0.05)
-            self.logger.experiment.add_figure('Figure/test_y_0', fig) 
-    
+            self.logger.experiment.add_figure('Figure/test_y_0', fig)
+
             fig, ax = plt.subplots()
-            cs = ax.contourf(y_hat[batch_idx,0,:,:].cpu().numpy(), cmap='OrRd', levels=levels)
+            cs = ax.contourf(y_hat[0, 0, :, :].cpu().numpy(), cmap='OrRd', levels=levels)
             plt.colorbar(cs, ax=ax, pad=0.05)
             self.logger.experiment.add_figure('Figure/test_yhat_0', fig)
  
@@ -367,26 +331,20 @@ class scenarIALightningModule(pl.LightningModule):
         df.to_csv(path_csv, index=False)
     
     def on_test_epoch_end(self):
+        # --- Scores et DataFrame : première simu uniquement ---
         df = self.build_metrics_dataframe()
         self.save_test_metrics_as_csv(df)
         df = df.drop("Name", axis=1)
-
-        y_all = torch.stack(self.test_step_outputs_true, axis=0).view(-1, self.img_size[0], self.img_size[1])
-        y_hat_all = torch.stack(self.test_step_outputs_hat, axis=0).view(-1, self.img_size[0], self.img_size[1])
-        t_all = torch.cat(self.test_step_times).cpu().numpy()
-
-        test_nrmse = NRMSE_ClimateBench(y_hat_all, y_all, self.lats) # all time period
-        self.log('test_nrmse', test_nrmse)
         self.log('loss', df['loss'].mean())
-        spatial_corr = self.spatial_corr_metric.compute()
-        self.log("test_corr", spatial_corr)
+        self.log("test_corr", self.spatial_corr_metric.compute())
 
+        # --- Regroupement par simu ---
         outputs_per_simu = {}
         for y, y_hat, t, simu in zip(
             self.test_step_outputs_true,
             self.test_step_outputs_hat,
             self.test_step_times,
-            self.test_step_simus 
+            self.test_step_simus
         ):
             simu_name = simu[0]
             if simu_name not in outputs_per_simu:
@@ -400,32 +358,70 @@ class scenarIALightningModule(pl.LightningModule):
             y_hat_s = torch.cat(outputs['hat'], dim=0).view(-1, self.img_size[0], self.img_size[1])
             t_s = torch.cat(outputs['times']).cpu().numpy()
 
+            nrmse_s = NRMSE_ClimateBench(y_hat_s, y_s, self.lats)
+            self.log(f'test_nrmse_{simu_name}', nrmse_s)
+            if simu_name == self.first_test_simu:
+                self.log('test_nrmse', nrmse_s)  # métrique "principale" = première simu
+
             fig, ax = plt.subplots()
             ax.plot(weighted_global_mean(y_s, self.lats).cpu().numpy(), label='True')
             ax.plot(weighted_global_mean(y_hat_s, self.lats).cpu().numpy(), label='Predicted')
             ax.set_xlabel('time')
             ax.set_ylabel(f'{self.outputs} value')
-            ax.set_title(f'Test {simu_name} {t_s[0,0]:.0f}-{t_s[-1,0]:.0f} – NRMSE : {test_nrmse:.4f}')
+            ax.set_title(f'Test {simu_name} {t_s[0,0]:.0f}-{t_s[-1,0]:.0f} – NRMSE : {nrmse_s:.4f}')
             ax.legend()
             self.logger.experiment.add_figure(f'Figure/test_true_vs_predicted_{simu_name}', fig)
 
-            eval = EvaluationPlots(simulation_name=simu_name,
-                                var_name=self.outputs[0],
-                                config_plots=self.config_plots)
-            eval.plot_error_maps(y_s.cpu().numpy(),
-                                y_hat_s.cpu().numpy(),
-                                title=f'{simu_name} {t_s[0,0]:.0f}-{t_s[-1,0]:.0f}',
-                                save_path=Path(self.logger.log_dir) / f'error_maps_{simu_name}.png')
+            if simu_name == self.first_test_simu:
+                eval = EvaluationPlots(simulation_name=simu_name,
+                                       var_name=self.outputs[0],
+                                       config_plots=self.config_plots)
+                eval.plot_error_maps(y_s.cpu().numpy(),
+                                     y_hat_s.cpu().numpy(),
+                                     title=f'{simu_name} {t_s[0,0]:.0f}-{t_s[-1,0]:.0f}',
+                                     save_path=Path(self.logger.log_dir) / f'error_maps_{simu_name}.png')
 
+        self.test_step_outputs_true.clear()
+        self.test_step_outputs_hat.clear()
+        self.test_step_times.clear()
+        self.test_step_simus.clear()
+        self.spatial_corr_metric.reset()
+        self._test_fig_logged = False
+
+    def on_load_checkpoint(self, checkpoint):
+        sd = checkpoint['state_dict']
+        if self.arch == 'cnn-lstm' and any(k.startswith('model.lstm.') for k in sd):
+            # ancien run : poids de l'ancien CNNLSTMModel
+            self.model = CNNLSTMModel(
+                slider=self.seq_length,
+                height=self.img_size[0], width=self.img_size[1],
+                channels=self.inputs_len,
+                lstm_units=self.hparams['config']['train']['lstm_units'],
+                output_seq_len=1 if self.predict_only_last_timestep else self.seq_length,
+            ).float()
+            
     def configure_optimizers(self):
-        #optimizer = torch.optim.RMSprop(self.parameters(), lr=self.learning_rate)
-        optimizer = torch.optim.AdamW(self.parameters(), lr=self.learning_rate, weight_decay=1e-5)
+        if self.arch == 'climax':
+            # https://github.com/microsoft/ClimaX/blob/main/src/climax/climate_projection/module.py
+            decay, no_decay = [], []
+            for name, p in self.named_parameters():
+                if not p.requires_grad:
+                    continue
+                (no_decay if any(s in name for s in ["var_embed", "pos_embed", "time_pos_embed"]) else decay).append(p)
+            optimizer = torch.optim.AdamW(
+                [{"params": decay, "weight_decay": 1e-5},
+                {"params": no_decay, "weight_decay": 0}],
+                lr=self.learning_rate)
+            scheduler = LinearWarmupCosineAnnealingLR(
+                optimizer,
+                self.climax_cfg.get('warmup_epochs', 10),
+                self.climax_cfg.get('max_epochs', 100),
+                1e-8, 1e-8)
+            return {"optimizer": optimizer,
+                    "lr_scheduler": {"scheduler": scheduler, "interval": "epoch"}}
+
+        params = [p for p in self.parameters() if p.requires_grad]
+        optimizer = torch.optim.AdamW(params, lr=self.learning_rate, weight_decay=1e-5)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=self.scheduler_step_size, gamma=self.scheduler_gamma)
-        return {
-        "optimizer": optimizer,
-        "lr_scheduler": {
-            "scheduler": scheduler,
-            "interval": "epoch",
-            "monitor": self.monitor_metric
-        }
-    }
+        return {"optimizer": optimizer,
+                "lr_scheduler": {"scheduler": scheduler, "interval": "epoch", "monitor": self.monitor_metric}}

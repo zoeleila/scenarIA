@@ -1,0 +1,4 @@
+train:
+  learning_rate: 1.0e-4
+  lstm_units: 64
+  L: 5

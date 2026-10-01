@@ -1,0 +1,38 @@
+config_version: 1
+data:
+  exp: 'exp13'
+  model_name: 'MPI-ESM1-2-LR'
+  raw_path: 'MPI-ESM1-2-LR/r1-r50i1p1f1/'
+  dataset_path: 'MPI-ESM1-2-LR/annual/'
+  seed_subsets: 42
+  nb_member_per_subsets: 30
+  one_to_many: True
+  nb_subsets: 1
+  piControl_diff: True
+  add_clim_to_predictors: True
+  predict_only_last_timestep: True
+  timescale: 'annual'
+  seq_length: 5
+  moving_window: 1
+  smoothed_outputs: False
+  lonshift: False
+
+train:
+  arch: 'attention-unet'
+  seed: 42
+  max_epochs: 2
+  batch_size: 4
+  runs_dir: 'MPI-ESM1-2-LR/annual/exp13/' 
+  inputs: ['CO2', 'SO2', 'CH4', 'BC', 'tau']
+  outputs: ['pr']
+  simus_train: ['historical', 'hist-aer_1950-2014', 'hist-nat', 'hist-GHG', 'ssp119', 'ssp126', 'ssp585']
+  simus_val: ['ssp370']
+  simus_test: ['ssp245', 'hist-aer_1850-1949']
+  simus_inference: ['ssp245']
+  val_size: 0.2
+  img_size: [96, 192]
+  scheduler_step_size: 50
+  scheduler_gamma: 0.1
+  monitor_metric: 'val_nrmse'
+  alpha: 5
+  early_stopping: 20

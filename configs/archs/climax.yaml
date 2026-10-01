@@ -1,0 +1,16 @@
+train:
+  learning_rate: 5.0e-5
+  climax:
+    pretrained_path: "https://huggingface.co/tungnd/climax/resolve/main/5.625deg.ckpt"  # "" pour partir de zéro
+    patch_size: 16
+    embed_dim: 1024
+    depth: 8
+    decoder_depth: 2
+    num_heads: 16
+    mlp_ratio: 4.0
+    drop_path: 0.1
+    drop_rate: 0.1
+    parallel_patch_embed: false
+    freeze_encoder: false
+    warmup_epochs: 5
+    max_epochs: 100

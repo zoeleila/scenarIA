@@ -8,10 +8,11 @@ import pandas as pd
 import argparse
 from datetime import datetime
 import xarray as xr
+import matplotlib.pyplot as plt
 
 from scenarIA.src.utils.settings import CONFIG_DIR, GRAPHS_DIR, RUNS_DIR, DATASET_DIR, PREDICTIONS_DIR
 from scenarIA.src.data.dataloader import get_dataloaders, get_climatology
-from scenarIA.src.data.lightning_module_climax import scenarIALightningModule
+from scenarIA.src.data.lightning_module import scenarIALightningModule
 from scenarIA.src.utils.datautils import standardize_units
 
 def predict(run_dir,
@@ -73,10 +74,10 @@ def save_predictions_as_netcdf(runs_to_predict, data_type='test', simus_to_predi
         lat = dict(np.load(DATASET_DIR / hparams['data']['dataset_path'] / 'coords.npz', allow_pickle=True))['lat']
         lon = dict(np.load(DATASET_DIR / hparams['data']['dataset_path'] / 'coords.npz', allow_pickle=True))['lon']
         if hparams['data'].get('lonshift', False):
-            new_lon = lon % 360
+            lon_shifted = np.sort(((lon + 180) % 360) - 180)
+            new_lon = lon_shifted % 360
             idx = np.argsort(new_lon, kind="stable")
             y_hat_all = np.take(y_hat_all, idx, axis=-1)
-            print(new_lon[idx])
         climatology = get_climatology(hparams)
         y_hat_all = y_hat_all + climatology.squeeze() # à modifier quand multivarié
         y_hat_all_list.append(y_hat_all)

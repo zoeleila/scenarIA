@@ -8,11 +8,19 @@ from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping, Learning
 import pytorch_lightning as pl
 
 from scenarIA.src.data.dataloader import get_dataloaders
-from scenarIA.src.data.lightning_module_climax import scenarIALightningModule
+from scenarIA.src.data.lightning_module import scenarIALightningModule
 from scenarIA.src.utils.utils import save_infos_from_config, test_name_from_config
 from scenarIA.src.utils.settings import CONFIG_DIR, RUNS_DIR, DATASET_DIR
+from scenarIA.src.utils.config import load_config
 
 torch.cuda.is_available()
+
+def parse_overrides(sets):
+    out = {}
+    for s in sets or []:
+        k, v = s.split('=', 1)
+        out[k] = yaml.safe_load(v)       # récupère int, float, list, bool
+    return out
 
 def run(config):
     save_infos_from_config(config)
@@ -78,11 +86,15 @@ def run(config):
     trainer.test(model, dataloaders=test_dataloader, ckpt_path='best')
 
 if __name__ == "__main__":
-    parser= argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, default='config.yaml', help='Path to the config file')
+    # ex : python train.py --arch unet --set train.seed=47 train.learning_rate=1e-4
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--arch', type=str, default=None, help="Architecture (archs/<arch>.yaml)")
+    parser.add_argument('--set', nargs='*', default=[], help="Overrides, ex : train.seed=47 train.batch_size=8")
     args = parser.parse_args()
 
-    with open(CONFIG_DIR / args.config) as file:
-        config = yaml.safe_load(file)
-        print(config)
+    overrides = parse_overrides(args.set)
+    if args.arch:
+        overrides['train.arch'] = args.arch
+    config = load_config(overrides)
+    print(config)
     run(config)

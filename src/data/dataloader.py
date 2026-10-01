@@ -15,7 +15,7 @@ from matplotlib.lines import Line2D
 
 import copy
 
-
+from scenarIA.src.utils.config import load_config
 from scenarIA.src.utils.transforms import ToTensor, Normalize, DiffClimatology, LonShift
 from scenarIA.src.utils.settings import RUNS_DIR, DATASET_DIR, CONFIG_DIR, GRAPHS_DIR
 from scenarIA.src.utils.plotutils import plot_hist, plot_multi_samples
@@ -426,8 +426,7 @@ def plot_batchs(dataset, var_name, save_path, config_plots=None):
         
 
 if __name__=='__main__':
-    with open(CONFIG_DIR / 'config.yaml') as file:
-        config = yaml.safe_load(file)
+    config = load_config()
 
     train_dataloader = get_dataloaders('train', config)
     for batch in train_dataloader:

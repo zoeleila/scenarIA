@@ -1,29 +1,19 @@
-import gc
-import torch
-import yaml, copy, itertools
-
+import itertools, sys, yaml
+import argparse
+from scenarIA.src.utils.config import load_config
 from scenarIA.src.utils.settings import CONFIG_DIR
-from scenarIA.src.train import run
+from scenarIA.src.train import run          # adapte l'import au nom de ton script d'entraînement
 
-def deep_set(d, dotted_key, value):
-    keys = dotted_key.split(".")
-    for k in keys[:-1]:
-        d = d[k]
-    d[keys[-1]] = value
+def run_sensitivity(name):
+    spec = yaml.safe_load(open(CONFIG_DIR / name))
+    base, grid = spec.get('base_overrides', {}), spec['grid']
+    keys = list(grid)
+    for values in itertools.product(*grid.values()):
+        config = load_config({**base, **dict(zip(keys, values))})
+        run(config)            # run() calcule test_name et runs_dir lui-même
 
-with open(CONFIG_DIR / "config.yaml") as f:
-    base = yaml.safe_load(f)
-
-with open(CONFIG_DIR / "sensitivity.yaml") as f:
-    sens = yaml.safe_load(f)
-
-keys = list(sens["grid"].keys())
-values = list(sens["grid"].values())
-
-for combo in itertools.product(*values):
-    cfg = copy.deepcopy(base)          # copie propre à chaque run
-    for k, v in zip(keys, combo):
-        deep_set(cfg, k, v)
-    run(cfg)
-    gc.collect()
-    torch.cuda.empty_cache()
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--file', type=str, default='sensitivity.yaml')
+    args = parser.parse_args()
+    run_sensitivity(args.file)

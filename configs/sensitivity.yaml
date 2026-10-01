@@ -1,4 +1,5 @@
-base_config: scenarIA/configs/config.yaml
-grid:
-  train.seed: [43, 44, 45, 46, 47, 48, 49, 50, 51]
-
+# configs/sensitivity/seeds_unet.yaml
+base_overrides:
+  train.arch: unet
+grid: # when list
+  train.seed: [45]

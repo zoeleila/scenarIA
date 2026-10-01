@@ -2,6 +2,8 @@ from pathlib import Path
 import yaml
 
 from scenarIA.src.utils.settings import RUNS_DIR, CONFIG_DIR
+from scenarIA.src.utils.config import load_config
+from utils import config
 
 def save_infos_from_config(config: dict) -> dict:
     runs_dir = RUNS_DIR / config['train']['runs_dir']
@@ -33,7 +35,6 @@ def test_name_from_config(config:dict) -> str:
 
 
 if __name__=='__main__':
-    with open(CONFIG_DIR / 'config.yaml') as file:
-        config = yaml.safe_load(file)
+    config = load_config()
     test_name = test_name_from_config(config)
     print(test_name)

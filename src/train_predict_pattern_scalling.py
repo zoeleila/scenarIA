@@ -3,6 +3,7 @@ Inspired by https://github.com/blutjens/climate-emulator/blob/public/emcli2/mode
 '''
 
 from cProfile import label
+from iris import load
 import xarray as xr
 import numpy as np
 from sklearn.linear_model import LinearRegression
@@ -15,7 +16,7 @@ from matplotlib.lines import Line2D
 
 from datetime import datetime
 
-
+from scenarIA.src.utils.config import load_config
 from scenarIA.src.utils.evalutils import EvaluationPlots
 from scenarIA.src.utils.datautils import weighted_global_mean
 from scenarIA.src.data.dataloader import get_dataset, get_dataloaders, get_climatology
@@ -101,8 +102,7 @@ if __name__ == "__main__":
     simu_test = args.simu_to_predict
     data_type = args.data_type
 
-    with open(CONFIG_DIR / 'config.yaml') as file:
-        config = yaml.safe_load(file)
+    config = load_config()
 
     with open(CONFIG_DIR / 'plots.yaml') as file:
         config_plots = yaml.safe_load(file)

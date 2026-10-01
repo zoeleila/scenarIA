@@ -1,5 +1,4 @@
 import glob
-from importlib.metadata import files
 from pathlib import Path
 from scenarIA.src.utils.settings import DATASET_DIR, RAW_DATA_DIR
 import xesmf as xe
