@@ -1,6 +1,6 @@
 config_version: 1
 data:
-  exp: 'exp13'
+  exp: 'benchmark'
   model_name: 'MPI-ESM1-2-LR'
   raw_path: 'MPI-ESM1-2-LR/r1-r50i1p1f1/'
   dataset_path: 'MPI-ESM1-2-LR/annual/'
@@ -12,17 +12,17 @@ data:
   add_clim_to_predictors: True
   predict_only_last_timestep: True
   timescale: 'annual'
-  seq_length: 5
+  seq_length: 10
   moving_window: 1
   smoothed_outputs: False
-  lonshift: False
+  lonshift: True
 
 train:
-  arch: 'attention-unet'
+  arch: 'climax'
   seed: 42
-  max_epochs: 2
+  max_epochs: 100
   batch_size: 4
-  runs_dir: 'MPI-ESM1-2-LR/annual/exp13/' 
+  runs_dir: 'MPI-ESM1-2-LR/annual/benchmark/' 
   inputs: ['CO2', 'SO2', 'CH4', 'BC', 'tau']
   outputs: ['pr']
   simus_train: ['historical', 'hist-aer_1950-2014', 'hist-nat', 'hist-GHG', 'ssp119', 'ssp126', 'ssp585']

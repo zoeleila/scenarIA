@@ -1,4 +1,4 @@
 train:
-  learning_rate: 1.0e-4
+  learning_rate: 1.0e-3
   lstm_units: 64
   L: 5

@@ -2,7 +2,7 @@ import itertools, sys, yaml
 import argparse
 from scenarIA.src.utils.config import load_config
 from scenarIA.src.utils.settings import CONFIG_DIR
-from scenarIA.src.train import run          # adapte l'import au nom de ton script d'entraînement
+from scenarIA.src.train import run
 
 def run_sensitivity(name):
     spec = yaml.safe_load(open(CONFIG_DIR / name))
@@ -10,7 +10,7 @@ def run_sensitivity(name):
     keys = list(grid)
     for values in itertools.product(*grid.values()):
         config = load_config({**base, **dict(zip(keys, values))})
-        run(config)            # run() calcule test_name et runs_dir lui-même
+        run(config)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

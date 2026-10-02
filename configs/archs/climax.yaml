@@ -1,3 +1,6 @@
+data:
+  lonshift: False # to match pretrained model domain (Climax)
+
 train:
   learning_rate: 5.0e-5
   climax:

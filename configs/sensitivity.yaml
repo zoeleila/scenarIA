@@ -1,5 +1,4 @@
-# configs/sensitivity/seeds_unet.yaml
-base_overrides:
-  train.arch: unet
+#base_overrides:
 grid: # when list
-  train.seed: [45]
+  train.arch: ['climax', 'cnn-lstm', 'cnn-gru', 'unet', 'attention-unet', 'convlstm']
+  train.seed: [42, 43, 44, 45, 46, 47, 48, 49, 50, 51]
