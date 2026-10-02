@@ -36,7 +36,7 @@ layout = {
 }
 
 class scenarIALightningModule(pl.LightningModule):
-    def __init__(self, config: dict, lats=None, load_pretrained: bool = True):
+    def __init__(self, config: dict, lats=None):
         super().__init__()
         config = migrate_config(config)                  # rétrocompat, automatique au load_from_checkpoint
         self.save_hyperparameters({'config': config})    # sauvegarde la config migrée
@@ -88,7 +88,7 @@ class scenarIALightningModule(pl.LightningModule):
             predict_only_last=self.predict_only_last_timestep,
             img_size=tuple(self.img_size))
         self.model = build_model(config, dims)
-        if self.arch == 'climax' and load_pretrained and self.climax_cfg.get('pretrained_path'):
+        if self.arch == 'climax' and self.climax_cfg.get('pretrained_path'):
             self.load_pretrained_climax(self.climax_cfg['pretrained_path'])
 
         self.time_per_epoch = []
